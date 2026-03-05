@@ -30,11 +30,17 @@ echo ""
 echo "📝 PEGA LA URL AQUÍ y presiona Enter:"
 read USER_URL
 
-# Guardar la URL
-echo $USER_URL > url_sheets.txt
+# Guardar la URL (usando ruta absoluta)
+echo $USER_URL > /data/data/com.termux/files/home/whatsapp-bot-ventas/url_sheets.txt
 echo "✅ URL guardada correctamente"
 echo ""
 
+# Mostrar confirmación
+echo "📌 URL guardada en: /data/data/com.termux/files/home/whatsapp-bot-ventas/url_sheets.txt"
+ls -la /data/data/com.termux/files/home/whatsapp-bot-ventas/url_sheets.txt
+
 # PASO 4: Ejecutar la instalación completa
+echo ""
 echo "📦 Continuando con la instalación..."
+cd /data/data/com.termux/files/home/whatsapp-bot-ventas
 bash install.sh
