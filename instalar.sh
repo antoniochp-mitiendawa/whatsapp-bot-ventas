@@ -35,7 +35,7 @@ echo "📦 PASO 3: Instalando librerías..."
 npm install
 
 header
-echo "🧠 PASO 4: Instalando Ollama y descargando modelo (780MB)..."
+echo "🧠 PASO 4: Configurando IA (Ollama)..."
 curl -fsSL https://ollama.com/install.sh | sh
 ollama serve > /dev/null 2>&1 &
 sleep 8
