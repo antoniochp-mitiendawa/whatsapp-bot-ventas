@@ -19,20 +19,93 @@ rm -rf whatsapp-bot-ventas 2>/dev/null
 git clone https://github.com/antoniochp-mitiendawa/whatsapp-bot-ventas.git
 cd whatsapp-bot-ventas
 
-# PASO 3: Crear carpeta del bot
-mkdir -p bot
-mkdir -p bot/logs
-mkdir -p bot/sesion_whatsapp
+# ============================================
+# PASO 3: PEDIR URL DE GOOGLE SHEETS
+# ============================================
+clear
+echo "===================================="
+echo "🔗 CONFIGURACIÓN - PASO 1 DE 2"
+echo "===================================="
+echo "📌 URL DE GOOGLE SHEETS"
+echo ""
+echo "1. Abre Google Sheets"
+echo "2. Ve al menú '🤖 Bot Ventas'"
+echo "3. Haz clic en '📋 Ver instrucciones'"
+echo "4. Copia la URL que aparece"
+echo ""
+echo "===================================="
+echo ""
 
-# PASO 4: Crear carpetas multimedia
-echo "📦 PASO 3: Creando carpetas multimedia..."
+# Crear un archivo temporal para forzar la entrada
+exec < /dev/tty
+
+while true; do
+    echo -n "📝 PEGA LA URL AQUÍ: "
+    read USER_URL
+    if [ -n "$USER_URL" ]; then
+        break
+    else
+        echo "❌ La URL no puede estar vacía"
+    fi
+done
+
+echo "$USER_URL" > url_sheets.txt
+echo "✅ URL guardada correctamente"
+sleep 1
+
+# ============================================
+# PASO 4: PEDIR NÚMERO DE WHATSAPP
+# ============================================
+clear
+echo "===================================="
+echo "📱 CONFIGURACIÓN - PASO 2 DE 2"
+echo "===================================="
+echo "📌 NÚMERO DE WHATSAPP"
+echo ""
+echo "Ingresa tu número con código de país"
+echo "Ejemplo: 5215512345678 (México)"
+echo "         5491123456789 (Argentina)"
+echo "         34612345678 (España)"
+echo ""
+echo "===================================="
+echo ""
+
+while true; do
+    echo -n "📱 NÚMERO (sin + ni espacios): "
+    read USER_NUMBER
+    if [ -n "$USER_NUMBER" ]; then
+        break
+    else
+        echo "❌ El número no puede estar vacío"
+    fi
+done
+
+# Crear archivo .env
+echo "WHATSAPP_NUMBER=$USER_NUMBER" > bot/.env
+echo "✅ Número guardado correctamente"
+sleep 1
+
+# ============================================
+# CONTINUAR CON LA INSTALACIÓN
+# ============================================
+clear
+echo "📦 Continuando con la instalación..."
+
+# PASO 5: Crear carpeta del bot (si no existe)
+mkdir -p bot
+cp url_sheets.txt bot/
+
+# PASO 6: Crear carpetas multimedia
+echo "📦 Creando carpetas multimedia..."
 mkdir -p /storage/emulated/0/WhatsAppBot
 mkdir -p /storage/emulated/0/WhatsAppBot/imagenes
 mkdir -p /storage/emulated/0/WhatsAppBot/videos
 mkdir -p /storage/emulated/0/WhatsAppBot/audios
+mkdir -p bot/logs
+mkdir -p bot/sesion_whatsapp
 
-# PASO 5: Instalar dependencias
-echo "📦 PASO 4: Instalando librerías..."
+# PASO 7: Instalar dependencias
+echo "📦 Instalando librerías..."
 cd bot
 npm init -y
 npm install @whiskeysockets/baileys
@@ -44,24 +117,23 @@ npm install pino
 npm install dotenv
 npm install fs-extra
 
-# PASO 6: Mensaje final con INSTRUCCIONES CLARAS
+# ============================================
+# MENSAJE FINAL
+# ============================================
 clear
 echo "===================================="
-echo "✅ INSTALACIÓN COMPLETADA"
+echo "✅ INSTALACIÓN COMPLETA"
 echo "===================================="
 echo ""
-echo "📝 PASOS MANUALES NECESARIOS:"
+echo "📌 RESUMEN:"
+echo "   • URL guardada: $USER_URL"
+echo "   • Número configurado: $USER_NUMBER"
 echo ""
-echo "1. GUARDAR LA URL DE GOOGLE SHEETS:"
-echo "   echo 'https://script.google.com/macros/s/.../exec' > ~/whatsapp-bot-ventas/url_sheets.txt"
-echo ""
-echo "2. CONFIGURAR NÚMERO DE WHATSAPP:"
-echo "   echo 'WHATSAPP_NUMBER=521234567890' > ~/whatsapp-bot-ventas/bot/.env"
-echo "   (reemplaza 521234567890 con tu número, código de país sin +)"
-echo ""
-echo "3. INICIAR EL BOT:"
+echo "🚀 PARA INICIAR EL BOT:"
 echo "   cd ~/whatsapp-bot-ventas/bot"
 echo "   node bot.js"
 echo ""
+echo "📱 El bot mostrará un código de 8 dígitos"
+echo "   Abre WhatsApp → Vincular dispositivo"
 echo "===================================="
 echo ""
