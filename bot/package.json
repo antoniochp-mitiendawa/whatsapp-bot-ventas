@@ -1,7 +1,7 @@
 {
   "name": "whatsapp-bot-ventas",
   "version": "1.0.0",
-  "description": "Bot de ventas vinculado a Google Sheets",
+  "description": "Bot de ventas con Google Sheets + Ollama",
   "main": "bot.js",
   "scripts": {
     "start": "node bot.js"
