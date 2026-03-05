@@ -1,71 +1,89 @@
 #!/bin/bash
 
-# Función de encabezado
-header() {
-    clear
-    echo "=========================================="
-    echo "🚀 INSTALADOR BOT VENTAS v1.1"
-    echo "=========================================="
-}
+# 1. Configuración de pantalla
+clear
+echo "=========================================="
+echo "🚀 INSTALADOR TODO-EN-UNO (CORREGIDO)"
+echo "=========================================="
 
-header
-echo "📦 PASO 1: Instalando dependencias del sistema..."
-pkg update -y && pkg upgrade -y
-pkg install git nodejs-lts wget -y
+# 2. Instalación de sistema
+echo "📦 Instalando herramientas necesarias..."
+pkg update -y
+pkg install git nodejs-lts -y
 
-header
-echo "📦 PASO 2: Descargando el bot..."
+# 3. Preparar carpetas
 cd $HOME
 rm -rf whatsapp-bot-ventas
-git clone https://github.com/antoniochp-mitiendawa/whatsapp-bot-ventas.git
+mkdir whatsapp-bot-ventas
 cd whatsapp-bot-ventas
 
-# --- DETENCIÓN 1: URL DE GOOGLE SHEETS ---
-header
-echo "🔗 CONFIGURACIÓN - GOOGLE SHEETS"
-echo "1. Ve a tu Google Sheets > Bot Ventas > Instrucciones."
-echo "2. Copia la URL de implementación (Web App)."
-echo "------------------------------------------"
-echo -n "📝 PEGA LA URL AQUÍ y presiona Enter: "
-read USER_URL
+# 4. PEDIR DATOS (Aquí es donde el código se detiene)
+echo ""
+echo "🔗 CONFIGURACIÓN DE GOOGLE SHEETS"
+read -p "📝 Pega la URL de tu hoja de cálculo: " URL_USER
 
-# Crear archivo .env base
-echo "URL_SHEETS=$USER_URL" > .env
-echo "OLLAMA_MODEL=llama3.2:1b" >> .env
-echo "OLLAMA_TEMPERATURE=0.7" >> .env
+echo ""
+echo "📱 CONFIGURACIÓN DE WHATSAPP"
+read -p "📞 Introduce tu número (ej. 5212223334455): " TEL_USER
 
-header
-echo "📦 PASO 3: Instalando librerías de Node.js..."
+# 5. EL COCOCINERO PREPARA LA RECETA (Escribir archivos automáticamente)
+echo "URL_SHEETS=$URL_USER" > .env
+echo "PAIRING_NUMBER=$TEL_USER" >> .env
+
+# Crear el package.json sin errores
+cat <<EOT > package.json
+{
+  "name": "bot-ventas",
+  "version": "1.0.0",
+  "main": "bot.js",
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.5.0",
+    "@hapi/boom": "^10.0.1",
+    "dotenv": "^16.3.1",
+    "pino": "^8.15.0"
+  }
+}
+EOT
+
+# Crear el bot.js sin el error de la línea 20
+cat <<EOT > bot.js
+require('dotenv').config();
+const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const pino = require('pino');
+
+async function iniciar() {
+    const { state, saveCreds } = await useMultiFileAuthState('sesion');
+    const { version } = await fetchLatestBaileysVersion();
+    const sock = makeWASocket({
+        version,
+        printQRInTerminal: false,
+        auth: state,
+        logger: pino({ level: 'silent' }),
+        browser: ["Ubuntu", "Chrome", "20.0.04"]
+    });
+
+    if (!sock.authState.creds.registered) {
+        const num = process.env.PAIRING_NUMBER;
+        console.log("🔄 Generando código para: " + num);
+        setTimeout(async () => {
+            const code = await sock.requestPairingCode(num);
+            console.log("\n✅ TU CÓDIGO ES: " + code + "\n");
+        }, 3000);
+    }
+    sock.ev.on('creds.update', saveCreds);
+    sock.ev.on('connection.update', (u) => {
+        if (u.connection === 'open') console.log('✅ CONECTADO');
+        if (u.connection === 'close') iniciar();
+    });
+}
+iniciar();
+EOT
+
+# 6. Finalizar
+echo "📦 Instalando librerías finales..."
 npm install
 
-header
-echo "🧠 PASO 4: Configurando IA (Ollama)..."
-curl -fsSL https://ollama.com/install.sh | sh
-ollama serve > /dev/null 2>&1 &
-sleep 5
-echo "📥 Descargando modelo Llama 3.2..."
-ollama pull llama3.2:1b
-
-# --- DETENCIÓN 2: NÚMERO DE TELÉFONO ---
-header
-echo "📱 CONFIGURACIÓN - WHATSAPP"
-echo "Introduce el número (ej: 5212223334455)"
-echo "------------------------------------------"
-echo -n "📞 NÚMERO DE TELÉFONO: "
-read WHATSAPP_NUMBER
-
-# Guardar el número en el .env
-echo "PAIRING_NUMBER=$WHATSAPP_NUMBER" >> .env
-
-header
 echo "=========================================="
-echo "✅ INSTALACIÓN FINALIZADA"
+echo "✅ TODO LISTO"
 echo "=========================================="
-echo "URL: $USER_URL"
-echo "Número: $WHATSAPP_NUMBER"
-echo "------------------------------------------"
-echo ""
-read -p "¿Iniciar el bot ahora? (s/n): " START
-if [ "$START" == "s" ]; then
-    node bot.js
-fi
+node bot.js
