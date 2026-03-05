@@ -1,11 +1,12 @@
 // ============================================
 // BOT DE VENTAS PARA WHATSAPP
-// Versión: 1.0 - Google Sheets + Ollama
+// Versión: 1.0 - Basado en proyecto anterior
+// Google Sheets + Ollama + Pairing
 // ============================================
 
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
-const fs = require('fs-extra');
+const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const cron = require('node-cron');
@@ -18,17 +19,20 @@ require('dotenv').config();
 // ============================================
 const CONFIG = {
     carpeta_sesion: './sesion_whatsapp',
-    archivo_url: '../url_sheets.txt',
+    archivo_url: './url_sheets.txt',
     carpeta_logs: './logs',
     carpeta_multimedia: '/storage/emulated/0/WhatsAppBot',
-    tiempo_typing: 2000,
-    numero_admin: process.env.WHATSAPP_NUMBER || ''
+    tiempo_typing: 2000
 };
 
 // Crear carpetas necesarias
-fs.ensureDirSync(CONFIG.carpeta_logs);
-fs.ensureDirSync(CONFIG.carpeta_sesion);
-fs.ensureDirSync(CONFIG.carpeta_multimedia);
+if (!fs.existsSync(CONFIG.carpeta_logs)) fs.mkdirSync(CONFIG.carpeta_logs);
+if (!fs.existsSync(CONFIG.carpeta_sesion)) fs.mkdirSync(CONFIG.carpeta_sesion);
+if (!fs.existsSync(CONFIG.carpeta_multimedia)) {
+    try {
+        fs.mkdirSync(CONFIG.carpeta_multimedia, { recursive: true });
+    } catch (e) {}
+}
 
 // ============================================
 // LEER URL DE GOOGLE SHEETS
@@ -39,12 +43,14 @@ function leerURL() {
             const url = fs.readFileSync(CONFIG.archivo_url, 'utf8').trim();
             console.log('✅ URL de Google Sheets cargada');
             return url;
+        } else {
+            console.error('❌ No se encuentra el archivo url_sheets.txt');
+            console.log('📝 Crea el archivo con: echo "TU_URL" > url_sheets.txt');
+            process.exit(1);
         }
-        console.error('❌ Archivo url_sheets.txt no encontrado');
-        return null;
     } catch (error) {
         console.error('❌ Error leyendo URL:', error.message);
-        return null;
+        process.exit(1);
     }
 }
 
@@ -108,7 +114,7 @@ async function consultarOllama(prompt, contexto) {
 }
 
 // ============================================
-// PEDIR NÚMERO DE TELÉFONO
+// PEDIR NÚMERO DE TELÉFONO (como en tu otro proyecto)
 // ============================================
 function pedirNumero() {
     return new Promise((resolve) => {
@@ -116,7 +122,16 @@ function pedirNumero() {
             input: process.stdin,
             output: process.stdout
         });
-        rl.question('📱 Introduce tu número (con código de país, sin +): ', (numero) => {
+        
+        console.log('\n====================================');
+        console.log('📱 CONFIGURACIÓN INICIAL');
+        console.log('====================================');
+        console.log('Ingresa tu número de WhatsApp');
+        console.log('Ejemplo: 5215512345678 (México)');
+        console.log('         5491123456789 (Argentina)');
+        console.log('====================================\n');
+        
+        rl.question('📱 NÚMERO (sin +): ', (numero) => {
             rl.close();
             resolve(numero.trim());
         });
@@ -133,42 +148,49 @@ async function iniciarWhatsApp() {
     console.log('====================================\n');
 
     const url_sheets = leerURL();
-    if (!url_sheets) {
-        console.log('❌ No hay URL. Crea archivo url_sheets.txt');
-        return;
-    }
+    if (!url_sheets) return;
 
     try {
         const { version } = await fetchLatestBaileysVersion();
         const { state, saveCreds } = await useMultiFileAuthState(CONFIG.carpeta_sesion);
+
+        const existeSesion = fs.existsSync(path.join(CONFIG.carpeta_sesion, 'creds.json'));
 
         const sock = makeWASocket({
             version,
             auth: state,
             logger: pino({ level: 'silent' }),
             printQRInTerminal: false,
-            browser: ['Bot Ventas', 'Chrome', '1.0.0'],
+            browser: ["Ubuntu", "Chrome", "20.0.04"],
             syncFullHistory: false,
             keepAliveIntervalMs: 25000
         });
 
-        // Primera vez - solicitar código
-        if (!sock.authState.creds.registered) {
+        // ============================================
+        // PRIMERA VEZ - PEDIR NÚMERO Y MOSTRAR CÓDIGO
+        // ============================================
+        if (!existeSesion) {
             console.log('\n📱 PRIMERA CONFIGURACIÓN\n');
-            const numero = CONFIG.numero_admin || await pedirNumero();
+            const numero = await pedirNumero();
+            
+            console.log('\n🔄 Solicitando código de vinculación...\n');
             
             setTimeout(async () => {
                 try {
                     const codigo = await sock.requestPairingCode(numero);
+                    
                     console.log('\n====================================');
-                    console.log('🔐 CÓDIGO DE VINCULACIÓN:', codigo);
+                    console.log('🔐 CÓDIGO DE VINCULACIÓN');
                     console.log('====================================');
-                    console.log('1. Abre WhatsApp');
-                    console.log('2. 3 puntos → Dispositivos vinculados');
-                    console.log('3. Vincular con número');
-                    console.log('4. Ingresa el código\n');
+                    console.log(`   ${codigo}`);
+                    console.log('====================================\n');
+                    console.log('1. Abre WhatsApp en tu teléfono');
+                    console.log('2. Ve a 3 puntos → Dispositivos vinculados');
+                    console.log('3. Toca "Vincular con número de teléfono"');
+                    console.log('4. Ingresa el código de arriba\n');
+                    
                 } catch (error) {
-                    console.log('❌ Error generando código');
+                    console.log('❌ Error generando código:', error.message);
                 }
             }, 2000);
         }
@@ -195,10 +217,11 @@ async function iniciarWhatsApp() {
             }
         });
 
-        // Guardar credenciales
         sock.ev.on('creds.update', saveCreds);
 
-        // Evento de mensajes
+        // ============================================
+        // EVENTO DE MENSAJES
+        // ============================================
         sock.ev.on('messages.upsert', async (m) => {
             const mensaje = m.messages[0];
             
@@ -217,6 +240,8 @@ async function iniciarWhatsApp() {
             console.log('\n══════════════════════════════════');
             console.log(`📩 Mensaje de ${remitente.split('@')[0]}: "${texto}"`);
             console.log('══════════════════════════════════\n');
+
+            guardarLog(`📩 Mensaje de ${remitente.split('@')[0]}: "${texto}"`);
 
             // Simular que está escribiendo
             await simularTyping(sock, remitente);
