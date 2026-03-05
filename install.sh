@@ -5,9 +5,6 @@ echo "🚀 INSTALADOR BOT VENTAS v1.0"
 echo "===================================="
 echo ""
 
-# Forzar entrada desde terminal
-exec < /dev/tty
-
 # PASO 1: Instalar lo básico
 echo "📦 PASO 1: Instalando programas necesarios..."
 pkg update -y
@@ -48,20 +45,16 @@ echo ""
 echo "===================================="
 echo ""
 
-while true; do
-    echo -n "📝 PEGA LA URL AQUÍ: "
+# Versión simplificada - sin exec < /dev/tty
+echo -n "📝 PEGA LA URL AQUÍ: "
+read USER_URL < /dev/tty || {
+    # Si falla, intentamos método alternativo
     read USER_URL
-    if [ -n "$USER_URL" ]; then
-        break
-    else
-        echo "❌ La URL no puede estar vacía"
-    fi
-done
+}
 
 echo "$USER_URL" > url_sheets.txt
 cp url_sheets.txt bot/
 echo "✅ URL guardada correctamente"
-sleep 1
 
 # ============================================
 # PASO 5: PEDIR NÚMERO DE WHATSAPP
@@ -74,25 +67,16 @@ echo "📌 NÚMERO DE WHATSAPP"
 echo ""
 echo "Ingresa tu número con código de país"
 echo "Ejemplo: 5215512345678 (México)"
-echo "         5491123456789 (Argentina)"
-echo "         34612345678 (España)"
-echo ""
 echo "===================================="
 echo ""
 
-while true; do
-    echo -n "📱 NÚMERO (sin + ni espacios): "
+echo -n "📱 NÚMERO (sin +): "
+read USER_NUMBER < /dev/tty || {
     read USER_NUMBER
-    if [ -n "$USER_NUMBER" ]; then
-        break
-    else
-        echo "❌ El número no puede estar vacío"
-    fi
-done
+}
 
 echo "WHATSAPP_NUMBER=$USER_NUMBER" > bot/.env
 echo "✅ Número guardado correctamente"
-sleep 1
 
 # ============================================
 # PASO 6: INSTALAR DEPENDENCIAS
