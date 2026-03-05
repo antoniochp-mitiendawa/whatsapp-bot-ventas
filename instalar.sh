@@ -1,5 +1,6 @@
 #!/bin/bash
 
+# Función de encabezado
 header() {
     clear
     echo "=========================================="
@@ -8,37 +9,34 @@ header() {
 }
 
 header
-echo "📦 PASO 1: Actualizando sistema e instalando dependencias..."
+echo "📦 PASO 1: Instalando dependencias del sistema..."
 pkg update -y && pkg upgrade -y
-pkg install git nodejs-lts wget -y [cite: 80]
+pkg install git nodejs-lts wget -y
 
 header
-echo "📦 PASO 2: Descargando el repositorio..."
+echo "📦 PASO 2: Descargando el bot..."
 cd $HOME
 rm -rf whatsapp-bot-ventas
 git clone https://github.com/antoniochp-mitiendawa/whatsapp-bot-ventas.git
-cd whatsapp-bot-ventas [cite: 80]
+cd whatsapp-bot-ventas
 
+# --- DETENCIÓN 1: URL DE GOOGLE SHEETS ---
 header
-echo "🔗 CONFIGURACIÓN - URL DE GOOGLE SHEETS"
+echo "🔗 CONFIGURACIÓN - GOOGLE SHEETS"
+echo "1. Ve a tu Google Sheets > Bot Ventas > Instrucciones."
+echo "2. Copia la URL de implementación (Web App)."
 echo "------------------------------------------"
-echo "1. Abre tu Google Sheets."
-echo "2. Ve al menú 'Bot Ventas' > 'Instrucciones'."
-echo "3. Copia la URL de la Web App."
-echo "------------------------------------------"
-echo ""
 echo -n "📝 PEGA LA URL AQUÍ y presiona Enter: "
-read USER_URL [cite: 81, 82]
+read USER_URL
 
-# Crear archivo .env con la URL de Sheets
+# Crear archivo .env base
 echo "URL_SHEETS=$USER_URL" > .env
 echo "OLLAMA_MODEL=llama3.2:1b" >> .env
 echo "OLLAMA_TEMPERATURE=0.7" >> .env
-echo "OLLAMA_MAX_TOKENS=200" >> .env [cite: 79, 82]
 
 header
 echo "📦 PASO 3: Instalando librerías de Node.js..."
-npm install [cite: 84]
+npm install
 
 header
 echo "🧠 PASO 4: Configurando IA (Ollama)..."
@@ -46,31 +44,28 @@ curl -fsSL https://ollama.com/install.sh | sh
 ollama serve > /dev/null 2>&1 &
 sleep 5
 echo "📥 Descargando modelo Llama 3.2..."
-ollama pull llama3.2:1b [cite: 85]
+ollama pull llama3.2:1b
 
+# --- DETENCIÓN 2: NÚMERO DE TELÉFONO ---
 header
-echo "📱 CONFIGURACIÓN - VINCULACIÓN WHATSAPP"
+echo "📱 CONFIGURACIÓN - WHATSAPP"
+echo "Introduce el número (ej: 5212223334455)"
 echo "------------------------------------------"
-echo "Introduce el número que usarás para el bot."
-echo "Usa formato internacional (ej: 5212223334455)."
-echo "------------------------------------------"
-echo ""
 echo -n "📞 NÚMERO DE TELÉFONO: "
-read WHATSAPP_NUMBER [cite: 86]
+read WHATSAPP_NUMBER
 
-# Guardar el número en el archivo .env
-echo "PAIRING_NUMBER=$WHATSAPP_NUMBER" >> .env [cite: 86]
+# Guardar el número en el .env
+echo "PAIRING_NUMBER=$WHATSAPP_NUMBER" >> .env
 
 header
 echo "=========================================="
 echo "✅ INSTALACIÓN FINALIZADA"
 echo "=========================================="
-echo "Número guardado: $WHATSAPP_NUMBER"
-echo "URL Sheets: $USER_URL"
+echo "URL: $USER_URL"
+echo "Número: $WHATSAPP_NUMBER"
 echo "------------------------------------------"
 echo ""
-read -p "¿Deseas iniciar el bot ahora mismo? (s/n): " START_NOW
-
-if [[ "$START_NOW" =~ ^[Ss]$ ]]; then
-    npm start [cite: 87]
+read -p "¿Iniciar el bot ahora? (s/n): " START
+if [ "$START" == "s" ]; then
+    node bot.js
 fi
