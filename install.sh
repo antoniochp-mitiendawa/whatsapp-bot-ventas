@@ -15,7 +15,17 @@ pkg install wget -y
 # PASO 2: Crear carpeta del bot
 echo "📦 PASO 2: Creando estructura..."
 mkdir -p bot
+
+# IMPORTANTE: La URL ya debería estar en url_sheets.txt por start.sh
+if [ ! -f "url_sheets.txt" ]; then
+    echo "❌ ERROR: No se encuentra url_sheets.txt"
+    echo "Debes ejecutar primero: bash start.sh"
+    exit 1
+fi
+
+# Copiar URL a la carpeta bot
 cp url_sheets.txt bot/
+echo "✅ URL copiada correctamente"
 
 # PASO 3: Crear carpetas multimedia
 echo "📦 PASO 3: Creando carpetas multimedia..."
@@ -48,14 +58,16 @@ mkdir -p bot/sesion_whatsapp
 mkdir -p bot/logs
 
 # ============================================
-# MENSAJE FINAL
+# LEER LA URL GUARDADA PARA MOSTRARLA
 # ============================================
+URL_GUARDADA=$(cat url_sheets.txt 2>/dev/null)
+
 clear
 echo "===================================="
 echo "✅ INSTALACIÓN COMPLETA"
 echo "===================================="
 echo ""
-echo "📌 URL guardada: $USER_URL"
+echo "📌 URL guardada: $URL_GUARDADA"
 echo ""
 echo "🚀 PARA INICIAR EL BOT:"
 echo "cd whatsapp-bot-ventas/bot"
