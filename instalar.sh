@@ -17,7 +17,7 @@ git clone https://github.com/antoniochp-mitiendawa/whatsapp-bot-ventas.git
 cd whatsapp-bot-ventas
 
 # ============================================
-# PASO 3: PEDIR LA URL - CON FORZADO DE TERMINAL
+# PASO 3: PEDIR LA URL - VERSIÓN CORREGIDA
 # ============================================
 echo ""
 echo "===================================="
@@ -30,17 +30,18 @@ echo "4. Copia la URL que aparece"
 echo "===================================="
 echo ""
 
-# FORZAR lectura desde terminal (ESTO HACE QUE FUNCIONE)
+# Forzar lectura desde terminal
 exec < /dev/tty
 
 echo -n "📝 PEGA LA URL AQUÍ y presiona Enter: "
 read USER_URL
 
-# Guardar la URL (en dos lugares para seguridad)
+# IMPORTANTE: Guardar la URL en variable y archivo
 echo "$USER_URL" > url_sheets.txt
 mkdir -p bot
 echo "$USER_URL" > bot/url_sheets.txt
-echo "✅ URL guardada correctamente"
+
+echo "✅ URL guardada correctamente: $USER_URL"
 echo ""
 
 # PASO 4: Instalar programas necesarios
