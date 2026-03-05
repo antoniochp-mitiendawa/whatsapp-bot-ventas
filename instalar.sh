@@ -17,7 +17,7 @@ git clone https://github.com/antoniochp-mitiendawa/whatsapp-bot-ventas.git
 cd whatsapp-bot-ventas
 
 # ============================================
-# PASO 3: PEDIR LA URL - VERSIÓN ULTRA SIMPLE
+# PASO 3: PEDIR LA URL - ¡VERSIÓN CORREGIDA!
 # ============================================
 echo ""
 echo "===================================="
@@ -30,11 +30,10 @@ echo "4. Copia la URL que aparece"
 echo "===================================="
 echo ""
 
-# Método más simple y directo
-echo -n "📝 PEGA LA URL AQUÍ y presiona Enter: "
-read USER_URL
+# LECTURA CORRECTA: El prompt y la lectura en la MISMA línea
+read -p "📝 PEGA LA URL AQUÍ y presiona Enter: " USER_URL
 
-# Verificar que no esté vacía
+# Validar que no esté vacía
 if [ -z "$USER_URL" ]; then
     echo "❌ ERROR: No se ingresó ninguna URL"
     exit 1
@@ -45,7 +44,7 @@ echo "$USER_URL" > url_sheets.txt
 mkdir -p bot
 cp url_sheets.txt bot/
 
-echo "✅ URL guardada correctamente"
+echo "✅ URL guardada correctamente: $USER_URL"
 echo ""
 
 # PASO 4: Instalar programas necesarios
@@ -106,11 +105,7 @@ echo ""
 
 # PASO 9: Preguntar si quiere iniciar ahora
 echo ""
-echo "¿Quieres iniciar el bot AHORA?"
-echo "Escribe 1 y Enter para INICIAR"
-echo "Escribe 2 y Enter para SALIR"
-echo ""
-read OPCION
+read -p "¿Quieres iniciar el bot AHORA? (1=SI / 2=NO): " OPCION
 
 if [ "$OPCION" == "1" ]; then
     echo ""
