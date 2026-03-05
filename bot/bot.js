@@ -8,33 +8,21 @@ const {
 } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
 const pino = require('pino');
-const readline = require('readline');
 const fs = require('fs');
 const path = require('path');
+const axios = require('axios');
 
-// Configuración cargada desde el instalador (.env)
+// Configuración cargada desde el .env que creó el instalador
 const CONFIG = {
     url_sheets: process.env.URL_SHEETS,
     numero_telefono: process.env.PAIRING_NUMBER,
     carpeta_sesion: 'sesion_whatsapp'
-}; [cite: 4, 79]
+};
 
+// Asegurar que exista la carpeta de sesión
 if (!fs.existsSync(CONFIG.carpeta_sesion)) {
     fs.mkdirSync(CONFIG.carpeta_sesion);
 }
-
-function pedirNumeroManual() {
-    return new Promise((resolve) => {
-        const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-        console.log('\n====================================');
-        console.log('📱 CONFIGURACIÓN INICIAL');
-        console.log('====================================');
-        rl.question('📱 Introduce tu número (sin +): ', (numero) => {
-            rl.close();
-            resolve(numero.trim());
-        });
-    });
-} [cite: 1, 2]
 
 async function iniciarWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState(CONFIG.carpeta_sesion);
@@ -42,7 +30,7 @@ async function iniciarWhatsApp() {
 
     const sock = makeWASocket({
         version,
-        printQRInTerminal: false,
+        printQRInTerminal: false, // Usaremos Pairing Code
         auth: {
             creds: state.creds,
             keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })),
@@ -51,44 +39,70 @@ async function iniciarWhatsApp() {
         browser: ["Ubuntu", "Chrome", "20.0.04"]
     });
 
-    // Lógica de Pairing Code automática
+    // LÓGICA DE EMPAREJAMIENTO AUTOMÁTICO
     if (!sock.authState.creds.registered) {
-        let numero = CONFIG.numero_telefono; [cite: 4]
+        const numero = CONFIG.numero_telefono;
         
         if (!numero) {
-            numero = await pedirNumeroManual();
+            console.log('❌ Error: No hay número de teléfono en el archivo .env');
+            process.exit(1);
         }
 
-        console.log(`\n🔄 Solicitando código para ${numero}...\n`);
+        console.log(`\n🔄 Solicitando código de vinculación para: ${numero}...`);
         
         setTimeout(async () => {
             try {
                 const codigo = await sock.requestPairingCode(numero);
                 console.log('\n====================================');
-                console.log('🔐 CÓDIGO DE VINCULACIÓN');
+                console.log('🔐 TU CÓDIGO DE VINCULACIÓN ES:');
+                console.log(`      >  ${codigo}  <`);
                 console.log('====================================');
-                console.log(`   ${codigo}`);
-                console.log('====================================\n');
-                console.log('1. Abre WhatsApp');
-                console.log('2. Dispositivos vinculados > Vincular con número');
-                console.log('3. Ingresa el código\n');
+                console.log('1. Abre WhatsApp en tu celular.');
+                console.log('2. Ve a Dispositivos vinculados > Vincular con número.');
+                console.log('3. Escribe el código de arriba.\n');
             } catch (error) {
-                console.log('❌ Error:', error.message);
+                console.error('❌ Error al generar el código:', error.message);
             }
-        }, 3000); [cite: 5, 6]
+        }, 3000);
     }
 
+    // Guardar credenciales cuando se actualicen
     sock.ev.on('creds.update', saveCreds);
 
+    // Manejo de conexión
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect } = update;
         if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
-            if (shouldReconnect) iniciarWhatsApp();
+            const debeReconectar = (lastDisconnect.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
+            if (debeReconectar) {
+                console.log('🔄 Reconectando...');
+                iniciarWhatsApp();
+            }
         } else if (connection === 'open') {
-            console.log('\n✅ ¡Conexión establecida!');
+            console.log('\n✅ ¡BOT CONECTADO Y LISTO!');
+            console.log('🔗 Sincronizado con Sheets:', CONFIG.url_sheets);
+        }
+    });
+
+    // Escuchar mensajes entrantes
+    sock.ev.on('messages.upsert', async ({ messages, type }) => {
+        if (type !== 'notify') return;
+        const msg = messages[0];
+        if (!msg.message || msg.key.fromMe) return;
+
+        const jid = msg.key.remoteJid;
+        const textoEscrito = msg.message.conversation || msg.message.extendedTextMessage?.text;
+
+        if (textoEscrito) {
+            console.log(`📩 Mensaje de [${jid}]: ${textoEscrito}`);
+            
+            // Ejemplo de respuesta automática para probar conexión
+            if (textoEscrito.toLowerCase() === 'hola') {
+                await sock.sendMessage(jid, { text: '¡Hola! Estoy procesando tu solicitud con mi sistema de ventas.' });
+            }
         }
     });
 }
 
-iniciarWhatsApp().catch(err => console.error("Error global:", err));
+// Arrancar el proceso
+iniciarWhatsApp().catch(err => console.error("Error crítico:", err));
