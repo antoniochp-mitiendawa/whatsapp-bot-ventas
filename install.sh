@@ -1,58 +1,31 @@
 #!/bin/bash
 
-# Este script se ejecuta LOCALMENTE después de la clonación
-# Aquí SÍ funciona el read correctamente
-
-clear
 echo "===================================="
-echo "🔗 CONFIGURACIÓN - PASO 1 DE 2"
-echo "===================================="
-echo "📌 URL DE GOOGLE SHEETS"
-echo ""
-echo "1. Abre Google Sheets"
-echo "2. Ve al menú '🤖 Bot Ventas'"
-echo "3. Haz clic en '📋 Ver instrucciones'"
-echo "4. Copia la URL que aparece"
-echo ""
+echo "📦 INSTALANDO BOT VENTAS"
 echo "===================================="
 echo ""
-echo -n "📝 PEGA LA URL AQUÍ: "
-read USER_URL
 
-echo "$USER_URL" > url_sheets.txt
-mkdir -p bot
-cp url_sheets.txt bot/
-
-clear
-echo "===================================="
-echo "📱 CONFIGURACIÓN - PASO 2 DE 2"
-echo "===================================="
-echo "📌 NÚMERO DE WHATSAPP"
-echo ""
-echo "Ingresa tu número con código de país"
-echo "Ejemplo: 5215512345678"
-echo ""
-echo -n "📱 NÚMERO (sin +): "
-read USER_NUMBER
-
-echo "WHATSAPP_NUMBER=$USER_NUMBER" > bot/.env
-
-# Continuar con el resto de la instalación...
-echo ""
-echo "📦 Instalando programas necesarios..."
+# PASO 1: Instalar programas necesarios
+echo "📦 PASO 1: Instalando programas necesarios..."
 pkg update -y
 pkg install nodejs -y
 pkg install yarn -y
+pkg install wget -y
 
-echo "📦 Creando carpetas multimedia..."
+# PASO 2: Crear carpeta del bot
+echo "📦 PASO 2: Creando estructura..."
+mkdir -p bot
+cp url_sheets.txt bot/
+
+# PASO 3: Crear carpetas multimedia
+echo "📦 PASO 3: Creando carpetas multimedia..."
 mkdir -p /storage/emulated/0/WhatsAppBot
 mkdir -p /storage/emulated/0/WhatsAppBot/imagenes
 mkdir -p /storage/emulated/0/WhatsAppBot/videos
 mkdir -p /storage/emulated/0/WhatsAppBot/audios
-mkdir -p bot/logs
-mkdir -p bot/sesion_whatsapp
 
-echo "📦 Instalando librerías..."
+# PASO 4: Instalar dependencias Node.js
+echo "📦 PASO 4: Instalando librerías (esto puede tomar varios minutos)..."
 cd bot
 npm init -y
 npm install @whiskeysockets/baileys
@@ -64,19 +37,54 @@ npm install pino
 npm install dotenv
 npm install fs-extra
 
-echo "📦 Instalando Ollama..."
+# PASO 5: Instalar Ollama
+echo "📦 PASO 5: Instalando Ollama (IA local)..."
+cd ..
 curl -fsSL https://ollama.com/install.sh | sh
 ollama pull llama3.2:1b &
 
+# PASO 6: Crear carpetas de sesión y logs
+mkdir -p bot/sesion_whatsapp
+mkdir -p bot/logs
+
+# ============================================
+# MENSAJE FINAL
+# ============================================
 clear
 echo "===================================="
 echo "✅ INSTALACIÓN COMPLETA"
 echo "===================================="
 echo ""
-echo "📌 CONFIGURACIÓN GUARDADA:"
-echo "   • URL: $USER_URL"
-echo "   • Número: $USER_NUMBER"
+echo "📌 URL guardada: $USER_URL"
 echo ""
-echo "🚀 INICIANDO BOT..."
-sleep 2
-node bot.js
+echo "🚀 PARA INICIAR EL BOT:"
+echo "cd whatsapp-bot-ventas/bot"
+echo "node bot.js"
+echo ""
+echo "📱 El bot te pedirá el número de teléfono"
+echo "   y mostrará el código de vinculación"
+echo "===================================="
+echo ""
+
+# PASO 7: Preguntar si quiere iniciar ahora
+echo ""
+echo "¿Quieres iniciar el bot AHORA?"
+echo "Escribe 1 y Enter para INICIAR"
+echo "Escribe 2 y Enter para SALIR"
+echo ""
+read OPCION
+
+if [ "$OPCION" == "1" ]; then
+    echo ""
+    echo "🚀 INICIANDO BOT..."
+    echo "======================"
+    echo ""
+    cd bot
+    node bot.js
+else
+    echo ""
+    echo "📝 Para iniciar después:"
+    echo "cd whatsapp-bot-ventas/bot"
+    echo "node bot.js"
+    echo ""
+fi
