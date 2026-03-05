@@ -10,7 +10,7 @@ header() {
 header
 echo "📦 PASO 1: Preparando entorno de Termux..."
 pkg update -y && pkg upgrade -y
-pkg install git nodejs-lts wget -y
+pkg install -y git nodejs-lts wget
 
 header
 echo "📦 PASO 2: Clonando proyecto desde GitHub..."
@@ -35,121 +35,103 @@ echo "📦 PASO 3: Instalando librerías..."
 npm install
 
 # ============================================
-# INSTALACIÓN Y VERIFICACIÓN DE OLLAMA
+# INSTALACIÓN SIMPLIFICADA DE OLLAMA (SIN COMPILAR)
 # ============================================
 header
-echo "🧠 PASO 4: Instalando y configurando IA (Ollama)..."
+echo "🧠 PASO 4: Instalando Ollama (versión simplificada)..."
 
-# Instalar dependencias necesarias para Ollama
-echo "📦 Instalando dependencias para Ollama..."
-pkg install -y cmake golang which
-
-# Verificar si Ollama ya está instalado
+# Método 1: Intentar con el binario oficial para Termux (si existe)
 if ! command -v ollama &> /dev/null; then
-    echo "⚙️  Ollama no encontrado. Instalando desde código fuente..."
+    echo "📥 Descargando Ollama para Termux..."
     
-    # Clonar y compilar Ollama
-    cd $HOME
-    if [ -d "ollama" ]; then
-        rm -rf ollama
-    fi
+    # Crear directorio para binarios si no existe
+    mkdir -p $PREFIX/bin
     
-    echo "⏳ Descargando Ollama (esto puede tomar varios minutos)..."
-    git clone --depth 1 https://github.com/ollama/ollama.git
-    cd ollama
-    
-    echo "🔧 Compilando Ollama (esto puede tomar varios minutos)..."
-    go generate ./...
-    go build .
-    
-    # Mover el binario a una ubicación accesible
-    cp ollama $PREFIX/bin/
-    cd $HOME/whatsapp-bot-ventas/bot
-    
-    echo "✅ Ollama instalado correctamente"
+    # Descargar binario precompilado (esto puede fallar, por eso tenemos plan B)
+    wget -O $PREFIX/bin/ollama https://github.com/ollama/ollama/releases/latest/download/ollama-linux-arm64 || {
+        echo "⚠️ No se pudo descargar el binario. Usando método alternativo..."
+        
+        # Método 2: Instalar ollama desde los repositorios de Termux (si existe)
+        pkg install -y ollama || {
+            echo "⚠️ Ollama no está en repositorios. Instalando dependencias mínimas..."
+            
+            # Método 3: Usar una implementación ligera (llama.cpp)
+            pkg install -y llama.cpp
+            
+            # Crear un script wrapper para simular ollama
+            cat > $PREFIX/bin/ollama << 'EOF'
+#!/bin/bash
+if [ "$1" = "serve" ]; then
+    llama-server --port 11434 --model $HOME/.ollama/models/blobs/llama3.2-1b.gguf &
+elif [ "$1" = "pull" ]; then
+    echo "Descargando modelo..."
+    mkdir -p $HOME/.ollama/models/blobs
+    wget -O $HOME/.ollama/models/blobs/llama3.2-1b.gguf https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf
+elif [ "$1" = "list" ]; then
+    ls -la $HOME/.ollama/models/blobs/
 else
-    echo "✅ Ollama ya está instalado"
+    $@
+fi
+EOF
+            chmod +x $PREFIX/bin/ollama
+        }
+    fi
+    chmod +x $PREFIX/bin/ollama 2>/dev/null || true
 fi
 
-# Función para verificar que Ollama está corriendo
-verificar_ollama() {
-    echo "🔄 Verificando que Ollama esté funcionando..."
-    
-    # Matar procesos previos de Ollama si existen
-    pkill -f "ollama serve" 2>/dev/null || true
-    
-    # Iniciar Ollama en segundo plano
-    echo "🚀 Iniciando servidor Ollama..."
+echo "✅ Ollama configurado"
+
+# ============================================
+# INICIAR OLLAMA Y VERIFICAR
+# ============================================
+echo "🚀 Iniciando servidor Ollama..."
+
+# Matar procesos previos
+pkill -f "ollama" 2>/dev/null
+pkill -f "llama-server" 2>/dev/null
+
+# Iniciar según el método disponible
+if command -v ollama &> /dev/null; then
     ollama serve > /dev/null 2>&1 &
-    
-    # Esperar a que inicie (máximo 10 segundos)
-    local max_intentos=10
-    local intento=0
-    
-    while [ $intento -lt $max_intentos ]; do
-        sleep 2
-        if curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
-            echo "✅ Servidor Ollama funcionando correctamente"
-            return 0
-        fi
-        intento=$((intento + 1))
-        echo "⏳ Esperando a que Ollama inicie... (intento $intento/$max_intentos)"
-    done
-    
-    echo "❌ Error: No se pudo iniciar el servidor Ollama"
-    return 1
-}
-
-# Verificar que Ollama está corriendo
-if ! verificar_ollama; then
-    echo "❌ No se pudo iniciar Ollama. Intentando método alternativo..."
-    
-    # Método alternativo: iniciar en una terminal diferente
-    nohup ollama serve > $HOME/ollama.log 2>&1 &
-    sleep 5
-    
-    if ! curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
-        echo "❌ Error fatal: No se puede iniciar Ollama"
-        echo "📝 Para solucionar manualmente:"
-        echo "  1. Ejecuta: ollama serve &"
-        echo "  2. Espera 5 segundos"
-        echo "  3. Ejecuta: node bot.js"
-        read -p "Presiona Enter para continuar con la instalación..."
-    else
-        echo "✅ Ollama iniciado correctamente (método alternativo)"
-    fi
+elif command -v llama-server &> /dev/null; then
+    llama-server --port 11434 --model $HOME/.ollama/models/blobs/llama3.2-1b.gguf > /dev/null 2>&1 &
 fi
 
-# Verificar y descargar modelo
-echo "📥 Verificando modelo llama3.2:1b..."
-if ! ollama list | grep -q "llama3.2:1b"; then
-    echo "⏳ Descargando modelo llama3.2:1b (esto puede tomar varios minutos)..."
-    ollama pull llama3.2:1b
-    if [ $? -eq 0 ]; then
-        echo "✅ Modelo descargado correctamente"
-    else
-        echo "⚠️  Error descargando modelo. Se intentará de nuevo al iniciar el bot"
-    fi
+# Esperar a que inicie
+echo "⏳ Esperando a que Ollama inicie..."
+sleep 10
+
+# Verificar conexión
+if curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
+    echo "✅ Servidor Ollama funcionando"
 else
-    echo "✅ Modelo ya existe"
+    echo "⚠️ No se pudo conectar con Ollama. Intentando método alternativo..."
+    
+    # Último intento: usar llama.cpp directamente
+    if ! command -v llama-server &> /dev/null; then
+        pkg install -y llama.cpp
+    fi
+    
+    # Crear directorio para el modelo
+    mkdir -p $HOME/.ollama/models/blobs
+    
+    # Descargar modelo si no existe
+    if [ ! -f $HOME/.ollama/models/blobs/llama3.2-1b.gguf ]; then
+        echo "📥 Descargando modelo (esto puede tomar varios minutos)..."
+        wget -O $HOME/.ollama/models/blobs/llama3.2-1b.gguf https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf
+    fi
+    
+    # Iniciar llama-server
+    pkill -f "llama-server" 2>/dev/null
+    llama-server --port 11434 --model $HOME/.ollama/models/blobs/llama3.2-1b.gguf > /dev/null 2>&1 &
+    sleep 5
 fi
 
-# Prueba final de conexión
-echo "🔄 Probando conexión con Ollama..."
-if curl -s http://localhost:11434/api/generate -d '{
-    "model": "llama3.2:1b",
-    "prompt": "responde OK si funcionas",
-    "stream": false
-}' > /dev/null 2>&1; then
+# Prueba final
+if curl -s http://localhost:11434/api/generate -d '{"model":"llama3.2:1b","prompt":"hola","stream":false}' > /dev/null 2>&1; then
     echo "✅ IA lista para usar"
 else
-    echo "⚠️  La IA no responde. Verifica manualmente con: curl http://localhost:11434/api/tags"
-fi
-
-# Agregar inicio automático al .bashrc para futuras sesiones
-if ! grep -q "ollama serve" $HOME/.bashrc; then
-    echo 'ollama serve > /dev/null 2>&1 &' >> $HOME/.bashrc
-    echo "✅ Inicio automático de Ollama configurado"
+    echo "⚠️ La IA podría no estar respondiendo, pero el bot intentará igual."
 fi
 
 # ============================================
@@ -162,25 +144,14 @@ echo "=========================================="
 echo ""
 echo "📌 URL: $USER_URL"
 echo "📞 Número: $WHATSAPP_NUMBER"
-echo "🧠 IA: Configurada y verificada"
-echo ""
-echo "⚠️  IMPORTANTE:"
-echo "   • Ollama está corriendo en segundo plano"
-echo "   • No cierres Termux sin detenerlo primero"
 echo ""
 
 read -p "¿Deseas iniciar el bot ahora? (s/n): " START
-if [ "$START" == "s" ]; o "$START" == "S" ]; then
+if [ "$START" == "s" ] || [ "$START" == "S" ]; then
     echo ""
     echo "🚀 INICIANDO BOT..."
     echo "======================"
     echo ""
-    # Verificar una última vez que Ollama esté vivo
-    if ! curl -s http://localhost:11434/api/tags > /dev/null; then
-        echo "⚠️  Ollama no responde. Intentando reiniciar..."
-        ollama serve &
-        sleep 5
-    fi
     node bot.js
 else
     echo ""
@@ -188,5 +159,4 @@ else
     echo "   cd whatsapp-bot-ventas/bot"
     echo "   node bot.js"
     echo ""
-    echo "⚠️  Recuerda tener Ollama corriendo: ollama serve &"
 fi
