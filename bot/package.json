@@ -1,7 +1,6 @@
 {
   "name": "whatsapp-bot-ventas",
   "version": "1.0.0",
-  "description": "Bot de ventas con Google Sheets + Ollama",
   "main": "bot.js",
   "scripts": {
     "start": "node bot.js"
@@ -9,7 +8,6 @@
   "dependencies": {
     "@whiskeysockets/baileys": "^6.5.0",
     "@hapi/boom": "^10.0.1",
-    "qrcode-terminal": "^0.12.0",
     "axios": "^1.6.0",
     "pino": "^8.15.0",
     "dotenv": "^16.3.1",
