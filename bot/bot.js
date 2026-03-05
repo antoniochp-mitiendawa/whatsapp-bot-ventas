@@ -11,78 +11,54 @@ const fs = require('fs');
 const axios = require('axios');
 const { Boom } = require('@hapi/boom');
 
-// ============================================
-// CONFIGURACIÓN GLOBAL
-// ============================================
 const CONFIG = {
     url_sheets: process.env.URL_SHEETS,
     numero_telefono: process.env.PAIRING_NUMBER,
     archivo_memoria: 'datos_tienda.json',
     carpeta_sesion: 'sesion_whatsapp',
     ollama_url: 'http://localhost:11434/api/generate',
-    modelo: process.env.OLLAMA_MODEL || 'llama3.2:1b'
+    modelo: 'llama3.2:1b'
 };
 
-// ============================================
-// SISTEMA DE MEMORIA LOCAL (SHEETS)
-// ============================================
+// --- FUNCIÓN DE CARGA ÚNICA DE DATOS ---
 async function sincronizarDatos() {
     try {
-        console.log("📥 Descargando configuración desde Google Sheets...");
+        console.log("📥 Accediendo a Google Sheets...");
         const response = await axios.get(`${CONFIG.url_sheets}?accion=leerTodo`);
-        
         if (response.data) {
             fs.writeFileSync(CONFIG.archivo_memoria, JSON.stringify(response.data, null, 2));
-            console.log("✅ Datos guardados localmente en datos_tienda.json");
+            console.log("✅ Datos guardados en memoria local.");
             return response.data;
         }
     } catch (error) {
-        console.log("⚠️ No se pudo conectar a Sheets. Intentando cargar memoria local...");
+        console.log("⚠️ Error de conexión. Intentando usar memoria local...");
         if (fs.existsSync(CONFIG.archivo_memoria)) {
             return JSON.parse(fs.readFileSync(CONFIG.archivo_memoria));
         }
-        console.error("❌ Error: No hay datos disponibles (ni remotos ni locales).");
-        return null;
     }
+    return null;
 }
 
-// ============================================
-// CEREBRO DEL BOT (OLLAMA IA)
-// ============================================
-async function obtenerRespuestaIA(mensajeCliente, datos) {
+// --- FUNCIÓN PARA HABLAR CON OLLAMA ---
+async function procesarConIA(texto, datos) {
     try {
-        // Preparamos el contexto con los datos locales
-        const empresa = JSON.stringify(datos.empresa || {});
-        const productos = JSON.stringify(datos.productos || []);
-        
-        const promptSystem = `Eres un vendedor experto de la siguiente empresa: ${empresa}. 
-        Tus productos son: ${productos}.
-        Reglas:
-        1. Responde de forma breve y amable.
-        2. Usa solo la información proporcionada.
-        3. Si el cliente pregunta algo que no está aquí, di que un asesor humano le ayudará pronto.
-        Cliente dice: ${mensajeCliente}`;
+        const contexto = `Empresa: ${JSON.stringify(datos.empresa)}. Productos: ${JSON.stringify(datos.productos)}.`;
+        const prompt = `Eres un vendedor. Datos: ${contexto}. Cliente dice: ${texto}. Responde brevemente.`;
 
         const res = await axios.post(CONFIG.ollama_url, {
             model: CONFIG.modelo,
-            prompt: promptSystem,
+            prompt: prompt,
             stream: false
         });
-
         return res.data.response;
     } catch (e) {
-        console.error("❌ Error en Ollama:", e.message);
-        return "Gracias por escribir. En un momento un asesor te atenderá personalmente.";
+        return "Gracias por contactarnos. Un asesor humano te atenderá en breve.";
     }
 }
 
-// ============================================
-// CONEXIÓN PRINCIPAL WHATSAPP
-// ============================================
+// --- CONEXIÓN WHATSAPP ---
 async function iniciarBot() {
-    // 1. CARGA DE DATOS ÚNICA AL INICIO
     const memoriaLocal = await sincronizarDatos();
-
     const { state, saveCreds } = await useMultiFileAuthState(CONFIG.carpeta_sesion);
     const { version } = await fetchLatestBaileysVersion();
 
@@ -97,61 +73,34 @@ async function iniciarBot() {
         browser: ["Ubuntu", "Chrome", "20.0.04"]
     });
 
-    // Vincular por Pairing Code si no hay sesión
     if (!sock.authState.creds.registered) {
-        const numero = CONFIG.numero_telefono;
-        if (!numero) {
-            console.log("❌ Error: No se encontró el número de teléfono en el .env");
-            return;
-        }
-
         setTimeout(async () => {
-            try {
-                const codigo = await sock.requestPairingCode(numero);
-                console.log('\n====================================');
-                console.log('🔐 TU CÓDIGO DE VINCULACIÓN:');
-                console.log(`      ${codigo}`);
-                console.log('====================================\n');
-            } catch (err) {
-                console.log("❌ Error al generar código:", err.message);
-            }
+            const codigo = await sock.requestPairingCode(CONFIG.numero_telefono);
+            console.log('\n====================================');
+            console.log('🔐 CÓDIGO DE VINCULACIÓN: ' + codigo);
+            console.log('====================================\n');
         }, 3000);
     }
 
     sock.ev.on('creds.update', saveCreds);
-
-    sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect } = update;
-        if (connection === 'open') {
-            console.log('\n✅ BOT CONECTADO Y LISTO PARA VENDER');
-        } else if (connection === 'close') {
-            const error = new Boom(lastDisconnect?.error)?.output?.statusCode;
-            if (error !== DisconnectReason.loggedOut) iniciarBot();
+    sock.ev.on('connection.update', (up) => {
+        if (up.connection === 'open') console.log('✅ BOT EN LÍNEA');
+        if (up.connection === 'close') {
+            if (new Boom(up.lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut) iniciarBot();
         }
     });
 
-    // ============================================
-    // ESCUCHA Y RESPUESTA DE MENSAJES
-    // ============================================
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
-        if (type !== 'notify') return;
-        const msg = messages[0];
-        if (!msg.message || msg.key.fromMe) return;
+        if (type !== 'notify' || !messages[0].message || messages[0].key.fromMe) return;
+        const jid = messages[0].key.remoteJid;
+        const msgText = messages[0].message.conversation || messages[0].message.extendedTextMessage?.text;
 
-        const jid = msg.key.remoteJid;
-        const textoCliente = msg.message.conversation || msg.message.extendedTextMessage?.text;
-
-        if (textoCliente && memoriaLocal) {
-            console.log(`📩 Mensaje de ${jid}: ${textoCliente}`);
-            
-            // Procesar con IA usando los datos que cargamos al inicio
-            const respuesta = await obtenerRespuestaIA(textoCliente, memoriaLocal);
-            
-            // Enviar respuesta
+        if (msgText && memoriaLocal) {
+            console.log(`📩 De ${jid}: ${msgText}`);
+            const respuesta = await procesarConIA(msgText, memoriaLocal);
             await sock.sendMessage(jid, { text: respuesta });
-            console.log(`📤 Respuesta enviada con éxito.`);
         }
     });
 }
 
-iniciarBot().catch(err => console.error("Error crítico:", err));
+iniciarBot().catch(err => console.error("Error:", err));
