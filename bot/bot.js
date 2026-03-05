@@ -20,18 +20,15 @@ const CONFIG = {
     modelo: 'llama3.2:1b'
 };
 
-// --- FUNCIÓN DE CARGA ÚNICA DE DATOS ---
 async function sincronizarDatos() {
     try {
-        console.log("📥 Accediendo a Google Sheets...");
+        console.log("📥 Sincronizando con Google Sheets...");
         const response = await axios.get(`${CONFIG.url_sheets}?accion=leerTodo`);
         if (response.data) {
             fs.writeFileSync(CONFIG.archivo_memoria, JSON.stringify(response.data, null, 2));
-            console.log("✅ Datos guardados en memoria local.");
             return response.data;
         }
     } catch (error) {
-        console.log("⚠️ Error de conexión. Intentando usar memoria local...");
         if (fs.existsSync(CONFIG.archivo_memoria)) {
             return JSON.parse(fs.readFileSync(CONFIG.archivo_memoria));
         }
@@ -39,24 +36,20 @@ async function sincronizarDatos() {
     return null;
 }
 
-// --- FUNCIÓN PARA HABLAR CON OLLAMA ---
 async function procesarConIA(texto, datos) {
     try {
         const contexto = `Empresa: ${JSON.stringify(datos.empresa)}. Productos: ${JSON.stringify(datos.productos)}.`;
-        const prompt = `Eres un vendedor. Datos: ${contexto}. Cliente dice: ${texto}. Responde brevemente.`;
-
         const res = await axios.post(CONFIG.ollama_url, {
             model: CONFIG.modelo,
-            prompt: prompt,
+            prompt: `Eres un vendedor. Datos: ${contexto}. Cliente dice: ${texto}. Responde brevemente.`,
             stream: false
         });
         return res.data.response;
     } catch (e) {
-        return "Gracias por contactarnos. Un asesor humano te atenderá en breve.";
+        return "Un asesor humano te atenderá en breve.";
     }
 }
 
-// --- CONEXIÓN WHATSAPP ---
 async function iniciarBot() {
     const memoriaLocal = await sincronizarDatos();
     const { state, saveCreds } = await useMultiFileAuthState(CONFIG.carpeta_sesion);
@@ -76,9 +69,7 @@ async function iniciarBot() {
     if (!sock.authState.creds.registered) {
         setTimeout(async () => {
             const codigo = await sock.requestPairingCode(CONFIG.numero_telefono);
-            console.log('\n====================================');
-            console.log('🔐 CÓDIGO DE VINCULACIÓN: ' + codigo);
-            console.log('====================================\n');
+            console.log('\n🔐 CÓDIGO DE VINCULACIÓN: ' + codigo + '\n');
         }, 3000);
     }
 
@@ -96,11 +87,10 @@ async function iniciarBot() {
         const msgText = messages[0].message.conversation || messages[0].message.extendedTextMessage?.text;
 
         if (msgText && memoriaLocal) {
-            console.log(`📩 De ${jid}: ${msgText}`);
             const respuesta = await procesarConIA(msgText, memoriaLocal);
             await sock.sendMessage(jid, { text: respuesta });
         }
     });
 }
 
-iniciarBot().catch(err => console.error("Error:", err));
+iniciarBot();
