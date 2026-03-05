@@ -1,11 +1,7 @@
 {
   "name": "whatsapp-bot-ventas",
   "version": "1.0.0",
-  "description": "Bot de ventas con Google Sheets + Llama.cpp",
   "main": "bot.js",
-  "scripts": {
-    "start": "node bot.js"
-  },
   "dependencies": {
     "@whiskeysockets/baileys": "^6.5.0",
     "@hapi/boom": "^10.0.1",
