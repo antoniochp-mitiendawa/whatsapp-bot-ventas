@@ -19,37 +19,41 @@ rm -rf whatsapp-bot-ventas 2>/dev/null
 git clone https://github.com/antoniochp-mitiendawa/whatsapp-bot-ventas.git
 cd whatsapp-bot-ventas
 
-# PASO 3: Pedir URL de Google Sheets (CORREGIDO)
+# ============================================
+# PASO 3: PEDIR URL - VERSIÓN CORREGIDA
+# ============================================
+clear
+echo "===================================="
+echo "🔗 CONFIGURACIÓN DE GOOGLE SHEETS"
+echo "===================================="
 echo ""
-echo "===================================="
-echo "🔗 URL DE GOOGLE SHEETS"
-echo "===================================="
-echo "1. Abre Google Sheets"
-echo "2. En el menú 'Bot Ventas'"
-echo "3. Ve a '📋 Ver instrucciones'"
-echo "4. Copia la URL que aparece al implementar"
+echo "ANTES DE CONTINUAR:"
+echo "1. Ve a Google Sheets"
+echo "2. Abre el menú '🤖 Bot Ventas'"
+echo "3. Haz clic en '📋 Ver instrucciones'"
+echo "4. Copia la URL que aparece"
+echo ""
 echo "===================================="
 echo ""
 
-# Pausa para que el usuario lea las instrucciones
-sleep 2
+# Crear un archivo temporal para forzar la pausa
+echo "⏸️  PRESIONA ENTER PARA CONTINUAR..."
+read -p ""
 
-# Leer la URL con validación
-while true; do
-    echo -n "📝 Escribe la URL y presiona Enter: "
+# Ahora pedir la URL directamente desde el terminal
+echo ""
+echo "📝 PEGA LA URL AQUÍ (clic derecho o mantener presionado para pegar):"
+read USER_URL
+
+# Validar que no esté vacía
+while [ -z "$USER_URL" ]; do
+    echo "❌ La URL no puede estar vacía. Intenta de nuevo:"
     read USER_URL
-    
-    if [ -n "$USER_URL" ]; then
-        break
-    else
-        echo "❌ La URL no puede estar vacía. Intenta de nuevo."
-    fi
 done
 
 # Guardar URL
 echo "$USER_URL" > url_sheets.txt
 echo "✅ URL guardada correctamente"
-sleep 1
 
 # PASO 4: Crear carpeta del bot
 mkdir -p bot
