@@ -1,89 +1,61 @@
 #!/bin/bash
 
-# 1. Configuración de pantalla
-clear
-echo "=========================================="
-echo "🚀 INSTALADOR TODO-EN-UNO (CORREGIDO)"
-echo "=========================================="
+header() {
+    clear
+    echo "=========================================="
+    echo "🚀 INSTALADOR PROFESIONAL BOT VENTAS"
+    echo "=========================================="
+}
 
-# 2. Instalación de sistema
-echo "📦 Instalando herramientas necesarias..."
-pkg update -y
-pkg install git nodejs-lts -y
+header
+echo "📦 PASO 1: Preparando entorno de Termux..."
+pkg update -y && pkg upgrade -y
+pkg install git nodejs-lts wget -y
 
-# 3. Preparar carpetas
+header
+echo "📦 PASO 2: Clonando proyecto desde GitHub..."
 cd $HOME
 rm -rf whatsapp-bot-ventas
-mkdir whatsapp-bot-ventas
+git clone https://github.com/antoniochp-mitiendawa/whatsapp-bot-ventas.git
 cd whatsapp-bot-ventas
 
-# 4. PEDIR DATOS (Aquí es donde el código se detiene)
+# DETENCIÓN PARA GOOGLE SHEETS
+header
+echo "🔗 CONFIGURACIÓN DE DATOS"
+echo "------------------------------------------"
+read -p "📝 PEGA TU URL DE GOOGLE SHEETS: " USER_URL
+
+# DETENCIÓN PARA WHATSAPP
 echo ""
-echo "🔗 CONFIGURACIÓN DE GOOGLE SHEETS"
-read -p "📝 Pega la URL de tu hoja de cálculo: " URL_USER
+echo "📱 VINCULACIÓN DE WHATSAPP"
+echo "------------------------------------------"
+read -p "📞 NÚMERO (Ej: 5212223334455): " WHATSAPP_NUMBER
 
-echo ""
-echo "📱 CONFIGURACIÓN DE WHATSAPP"
-read -p "📞 Introduce tu número (ej. 5212223334455): " TEL_USER
+# CREACIÓN DEL ARCHIVO .ENV (EL CORAZÓN DEL BOT)
+echo "URL_SHEETS=$USER_URL" > .env
+echo "PAIRING_NUMBER=$WHATSAPP_NUMBER" >> .env
+echo "OLLAMA_MODEL=llama3.2:1b" >> .env
 
-# 5. EL COCOCINERO PREPARA LA RECETA (Escribir archivos automáticamente)
-echo "URL_SHEETS=$URL_USER" > .env
-echo "PAIRING_NUMBER=$TEL_USER" >> .env
-
-# Crear el package.json sin errores
-cat <<EOT > package.json
-{
-  "name": "bot-ventas",
-  "version": "1.0.0",
-  "main": "bot.js",
-  "dependencies": {
-    "@whiskeysockets/baileys": "^6.5.0",
-    "@hapi/boom": "^10.0.1",
-    "dotenv": "^16.3.1",
-    "pino": "^8.15.0"
-  }
-}
-EOT
-
-# Crear el bot.js sin el error de la línea 20
-cat <<EOT > bot.js
-require('dotenv').config();
-const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
-const pino = require('pino');
-
-async function iniciar() {
-    const { state, saveCreds } = await useMultiFileAuthState('sesion');
-    const { version } = await fetchLatestBaileysVersion();
-    const sock = makeWASocket({
-        version,
-        printQRInTerminal: false,
-        auth: state,
-        logger: pino({ level: 'silent' }),
-        browser: ["Ubuntu", "Chrome", "20.0.04"]
-    });
-
-    if (!sock.authState.creds.registered) {
-        const num = process.env.PAIRING_NUMBER;
-        console.log("🔄 Generando código para: " + num);
-        setTimeout(async () => {
-            const code = await sock.requestPairingCode(num);
-            console.log("\n✅ TU CÓDIGO ES: " + code + "\n");
-        }, 3000);
-    }
-    sock.ev.on('creds.update', saveCreds);
-    sock.ev.on('connection.update', (u) => {
-        if (u.connection === 'open') console.log('✅ CONECTADO');
-        if (u.connection === 'close') iniciar();
-    });
-}
-iniciar();
-EOT
-
-# 6. Finalizar
-echo "📦 Instalando librerías finales..."
+header
+echo "📦 PASO 3: Instalando librerías de Node.js..."
 npm install
 
+header
+echo "🧠 PASO 4: Instalando y configurando Ollama..."
+curl -fsSL https://ollama.com/install.sh | sh
+# Iniciar servidor de Ollama en segundo plano
+ollama serve > /dev/null 2>&1 &
+sleep 8
+echo "📥 Descargando modelo de IA (Llama 3.2)..."
+ollama pull llama3.2:1b
+
+header
 echo "=========================================="
-echo "✅ TODO LISTO"
+echo "✅ INSTALACIÓN FINALIZADA CON ÉXITO"
 echo "=========================================="
-node bot.js
+echo "El sistema está listo para vincular."
+echo ""
+read -p "¿Deseas iniciar el bot ahora? (s/n): " START
+if [ "$START" == "s" ]; then
+    node bot.js
+fi
