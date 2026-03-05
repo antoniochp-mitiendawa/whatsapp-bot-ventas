@@ -5,6 +5,9 @@ echo "🚀 INSTALADOR BOT VENTAS v1.0"
 echo "===================================="
 echo ""
 
+# Forzar entrada desde terminal
+exec < /dev/tty
+
 # PASO 1: Instalar lo básico
 echo "📦 PASO 1: Instalando programas necesarios..."
 pkg update -y
@@ -19,8 +22,17 @@ rm -rf whatsapp-bot-ventas 2>/dev/null
 git clone https://github.com/antoniochp-mitiendawa/whatsapp-bot-ventas.git
 cd whatsapp-bot-ventas
 
+# PASO 3: Crear estructura básica
+mkdir -p bot
+mkdir -p /storage/emulated/0/WhatsAppBot
+mkdir -p /storage/emulated/0/WhatsAppBot/imagenes
+mkdir -p /storage/emulated/0/WhatsAppBot/videos
+mkdir -p /storage/emulated/0/WhatsAppBot/audios
+mkdir -p bot/logs
+mkdir -p bot/sesion_whatsapp
+
 # ============================================
-# PASO 3: PEDIR URL DE GOOGLE SHEETS
+# PASO 4: PEDIR URL DE GOOGLE SHEETS
 # ============================================
 clear
 echo "===================================="
@@ -36,9 +48,6 @@ echo ""
 echo "===================================="
 echo ""
 
-# Crear un archivo temporal para forzar la entrada
-exec < /dev/tty
-
 while true; do
     echo -n "📝 PEGA LA URL AQUÍ: "
     read USER_URL
@@ -50,11 +59,12 @@ while true; do
 done
 
 echo "$USER_URL" > url_sheets.txt
+cp url_sheets.txt bot/
 echo "✅ URL guardada correctamente"
 sleep 1
 
 # ============================================
-# PASO 4: PEDIR NÚMERO DE WHATSAPP
+# PASO 5: PEDIR NÚMERO DE WHATSAPP
 # ============================================
 clear
 echo "===================================="
@@ -80,32 +90,16 @@ while true; do
     fi
 done
 
-# Crear archivo .env
 echo "WHATSAPP_NUMBER=$USER_NUMBER" > bot/.env
 echo "✅ Número guardado correctamente"
 sleep 1
 
 # ============================================
-# CONTINUAR CON LA INSTALACIÓN
+# PASO 6: INSTALAR DEPENDENCIAS
 # ============================================
 clear
-echo "📦 Continuando con la instalación..."
+echo "📦 Instalando librerías (esto puede tomar varios minutos)..."
 
-# PASO 5: Crear carpeta del bot (si no existe)
-mkdir -p bot
-cp url_sheets.txt bot/
-
-# PASO 6: Crear carpetas multimedia
-echo "📦 Creando carpetas multimedia..."
-mkdir -p /storage/emulated/0/WhatsAppBot
-mkdir -p /storage/emulated/0/WhatsAppBot/imagenes
-mkdir -p /storage/emulated/0/WhatsAppBot/videos
-mkdir -p /storage/emulated/0/WhatsAppBot/audios
-mkdir -p bot/logs
-mkdir -p bot/sesion_whatsapp
-
-# PASO 7: Instalar dependencias
-echo "📦 Instalando librerías..."
 cd bot
 npm init -y
 npm install @whiskeysockets/baileys
@@ -118,6 +112,13 @@ npm install dotenv
 npm install fs-extra
 
 # ============================================
+# PASO 7: INSTALAR OLLAMA
+# ============================================
+echo "📦 Instalando Ollama (IA local)..."
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull llama3.2:1b &
+
+# ============================================
 # MENSAJE FINAL
 # ============================================
 clear
@@ -125,15 +126,13 @@ echo "===================================="
 echo "✅ INSTALACIÓN COMPLETA"
 echo "===================================="
 echo ""
-echo "📌 RESUMEN:"
-echo "   • URL guardada: $USER_URL"
-echo "   • Número configurado: $USER_NUMBER"
+echo "📌 CONFIGURACIÓN GUARDADA:"
+echo "   • URL: $USER_URL"
+echo "   • Número: $USER_NUMBER"
 echo ""
-echo "🚀 PARA INICIAR EL BOT:"
-echo "   cd ~/whatsapp-bot-ventas/bot"
-echo "   node bot.js"
-echo ""
-echo "📱 El bot mostrará un código de 8 dígitos"
-echo "   Abre WhatsApp → Vincular dispositivo"
-echo "===================================="
-echo ""
+echo "🚀 INICIANDO BOT EN 3 SEGUNDOS..."
+sleep 3
+
+# Iniciar el bot automáticamente
+cd ~/whatsapp-bot-ventas/bot
+node bot.js
