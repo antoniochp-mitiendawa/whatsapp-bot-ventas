@@ -35,103 +35,68 @@ echo "📦 PASO 3: Instalando librerías..."
 npm install
 
 # ============================================
-# INSTALACIÓN SIMPLIFICADA DE OLLAMA (SIN COMPILAR)
+# INSTALACIÓN SIMPLIFICADA DE OLLAMA
 # ============================================
 header
-echo "🧠 PASO 4: Instalando Ollama (versión simplificada)..."
+echo "🧠 PASO 4: Instalando Ollama..."
 
-# Método 1: Intentar con el binario oficial para Termux (si existe)
+# Verificar si ya está instalado
 if ! command -v ollama &> /dev/null; then
-    echo "📥 Descargando Ollama para Termux..."
+    echo "📥 Instalando Ollama desde repositorio..."
     
-    # Crear directorio para binarios si no existe
-    mkdir -p $PREFIX/bin
-    
-    # Descargar binario precompilado (esto puede fallar, por eso tenemos plan B)
-    wget -O $PREFIX/bin/ollama https://github.com/ollama/ollama/releases/latest/download/ollama-linux-arm64 || {
-        echo "⚠️ No se pudo descargar el binario. Usando método alternativo..."
+    # Intentar instalar desde repositorio de Termux
+    if pkg install -y ollama; then
+        echo "✅ Ollama instalado desde repositorio"
+    else
+        echo "⚠️ No disponible en repositorio, usando método alternativo..."
         
-        # Método 2: Instalar ollama desde los repositorios de Termux (si existe)
-        pkg install -y ollama || {
-            echo "⚠️ Ollama no está en repositorios. Instalando dependencias mínimas..."
-            
-            # Método 3: Usar una implementación ligera (llama.cpp)
-            pkg install -y llama.cpp
-            
-            # Crear un script wrapper para simular ollama
-            cat > $PREFIX/bin/ollama << 'EOF'
-#!/bin/bash
-if [ "$1" = "serve" ]; then
-    llama-server --port 11434 --model $HOME/.ollama/models/blobs/llama3.2-1b.gguf &
-elif [ "$1" = "pull" ]; then
-    echo "Descargando modelo..."
-    mkdir -p $HOME/.ollama/models/blobs
-    wget -O $HOME/.ollama/models/blobs/llama3.2-1b.gguf https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf
-elif [ "$1" = "list" ]; then
-    ls -la $HOME/.ollama/models/blobs/
-else
-    $@
-fi
-EOF
-            chmod +x $PREFIX/bin/ollama
-        }
+        # Instalar dependencias para compilación rápida
+        pkg install -y golang
+        
+        # Clonar y compilar (versión mínima)
+        cd $HOME
+        git clone --depth 1 https://github.com/ollama/ollama.git
+        cd ollama
+        go build -o ollama .
+        cp ollama $PREFIX/bin/
+        cd $HOME/whatsapp-bot-ventas/bot
     fi
-    chmod +x $PREFIX/bin/ollama 2>/dev/null || true
 fi
-
-echo "✅ Ollama configurado"
 
 # ============================================
-# INICIAR OLLAMA Y VERIFICAR
+# INICIAR OLLAMA
 # ============================================
 echo "🚀 Iniciando servidor Ollama..."
 
 # Matar procesos previos
-pkill -f "ollama" 2>/dev/null
-pkill -f "llama-server" 2>/dev/null
+pkill -f "ollama serve" 2>/dev/null || true
 
-# Iniciar según el método disponible
-if command -v ollama &> /dev/null; then
-    ollama serve > /dev/null 2>&1 &
-elif command -v llama-server &> /dev/null; then
-    llama-server --port 11434 --model $HOME/.ollama/models/blobs/llama3.2-1b.gguf > /dev/null 2>&1 &
-fi
+# Iniciar servidor
+ollama serve > /dev/null 2>&1 &
+sleep 5
 
-# Esperar a que inicie
-echo "⏳ Esperando a que Ollama inicie..."
-sleep 10
-
-# Verificar conexión
+# Verificar que está corriendo
 if curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
     echo "✅ Servidor Ollama funcionando"
 else
-    echo "⚠️ No se pudo conectar con Ollama. Intentando método alternativo..."
-    
-    # Último intento: usar llama.cpp directamente
-    if ! command -v llama-server &> /dev/null; then
-        pkg install -y llama.cpp
-    fi
-    
-    # Crear directorio para el modelo
-    mkdir -p $HOME/.ollama/models/blobs
-    
-    # Descargar modelo si no existe
-    if [ ! -f $HOME/.ollama/models/blobs/llama3.2-1b.gguf ]; then
-        echo "📥 Descargando modelo (esto puede tomar varios minutos)..."
-        wget -O $HOME/.ollama/models/blobs/llama3.2-1b.gguf https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf
-    fi
-    
-    # Iniciar llama-server
-    pkill -f "llama-server" 2>/dev/null
-    llama-server --port 11434 --model $HOME/.ollama/models/blobs/llama3.2-1b.gguf > /dev/null 2>&1 &
+    echo "⚠️ Error al iniciar Ollama, intentando de nuevo..."
+    ollama serve &
     sleep 5
 fi
 
+# Descargar modelo
+echo "📥 Verificando modelo..."
+if ! ollama list | grep -q "llama3.2:1b"; then
+    echo "⏳ Descargando modelo (esto puede tomar varios minutos)..."
+    ollama pull llama3.2:1b
+fi
+
 # Prueba final
+echo "🔄 Probando conexión con IA..."
 if curl -s http://localhost:11434/api/generate -d '{"model":"llama3.2:1b","prompt":"hola","stream":false}' > /dev/null 2>&1; then
     echo "✅ IA lista para usar"
 else
-    echo "⚠️ La IA podría no estar respondiendo, pero el bot intentará igual."
+    echo "⚠️ La IA no responde, pero el bot intentará igual"
 fi
 
 # ============================================
