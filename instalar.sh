@@ -1,76 +1,95 @@
-}#!/bin/bash
+#!/bin/bash
 
-echo "===================================="
-echo "🚀 INSTALADOR BOT VENTAS v1.0"
-echo "===================================="
-echo ""
+# Función para limpiar pantalla y mostrar encabezado
+header() {
+    clear
+    echo "=========================================="
+    echo "🚀 INSTALADOR BOT VENTAS v1.1"
+    echo "=========================================="
+}
 
-# PASO 1: Instalar Git
-echo "📦 PASO 1: Instalando Git..."
-pkg install git -y
+header
+echo "📦 PASO 1: Actualizando sistema e instalando Git..."
+pkg update -y && pkg upgrade -y
+pkg install git nodejs yarn wget -y
 
-# PASO 2: Crear directorio y descargar
-echo "📦 PASO 2: Descargando el bot..."
-cd /data/data/com.termux/files/home
-rm -rf whatsapp-bot-ventas 2>/dev/null
+# PASO 2: Clonar repositorio
+header
+echo "📦 PASO 2: Descargando el repositorio..."
+cd $HOME
+rm -rf whatsapp-bot-ventas
 git clone https://github.com/antoniochp-mitiendawa/whatsapp-bot-ventas.git
 cd whatsapp-bot-ventas
 
 # ============================================
-# PASO 3: PEDIR URL - ESTO SE DETIENE
+# PASO 3: DETENCIÓN PARA URL DE GOOGLE SHEETS
 # ============================================
-echo ""
-echo "===================================="
+header
 echo "🔗 CONFIGURACIÓN - URL DE GOOGLE SHEETS"
-echo "===================================="
-echo "1. Abre Google Sheets"
-echo "2. Ve al menú '🤖 Bot Ventas'"
-echo "3. Haz clic en '📋 Ver instrucciones'"
-echo "4. Copia la URL que aparece"
-echo "===================================="
+echo "------------------------------------------"
+echo "1. Abre tu Google Sheets."
+echo "2. Ve al menú 'Bot Ventas' > 'Instrucciones'."
+echo "3. Copia la URL de la API."
+echo "------------------------------------------"
 echo ""
+echo -n "📝 PEGA LA URL AQUÍ y presiona Enter: "
+read USER_URL
 
-# TRUCO: Usar >&2 para asegurar que el prompt se vea
-echo -n "📝 PEGA LA URL AQUÍ y presiona Enter: " >&2
+# Guardar URL en el lugar correcto
+echo "URL_SHEETS=$USER_URL" > .env
+echo "✅ URL guardada correctamente."
+sleep 2
 
-# Leer directamente desde la terminal
-read USER_URL </dev/tty
+# PASO 4: Instalación de dependencias de Node
+header
+echo "📦 PASO 3: Instalando librerías de WhatsApp (Baileys)..."
+# Entramos a la carpeta del bot si existe, si no, lo hacemos en la raíz del repo
+if [ -d "bot" ]; then cd bot; fi
 
-# Guardar URL
-echo "$USER_URL" > url_sheets.txt
-mkdir -p bot
-cp url_sheets.txt bot/
+npm install
+# Forzamos instalación de dependencias críticas si no están en el package.json
+npm install @whiskeysockets/baileys @hapi/boom qrcode-terminal dotenv pino
 
-echo "✅ URL guardada: $USER_URL"
-echo ""
-
-# PASO 4: Continuar instalación
-echo "📦 Instalando programas necesarios..."
-pkg update -y
-pkg install nodejs yarn wget -y
-
-# PASO 5: Carpetas multimedia
-mkdir -p /storage/emulated/0/WhatsAppBot/{imagenes,videos,audios}
-
-# PASO 6: Dependencias
-cd bot
-npm init -y
-npm install @whiskeysockets/baileys @hapi/boom qrcode-terminal node-cron axios pino dotenv fs-extra
-
-# PASO 7: Ollama
-cd ..
+# PASO 5: Configuración de Ollama (IA)
+header
+echo "🧠 PASO 4: Configurando IA (Ollama)..."
 curl -fsSL https://ollama.com/install.sh | sh
-ollama pull llama3.2:1b &
+# Iniciamos ollama en segundo plano para poder descargar el modelo
+ollama serve > /dev/null 2>&1 &
+sleep 5
+echo "📥 Descargando modelo Llama 3.2 (esto puede tardar)..."
+ollama pull llama3.2:1b
 
-mkdir -p bot/sesion_whatsapp bot/logs
+# ============================================
+# PASO 6: DETENCIÓN PARA PAIRING CODE (WHATSAPP)
+# ============================================
+header
+echo "📱 CONFIGURACIÓN - VINCULACIÓN WHATSAPP"
+echo "------------------------------------------"
+echo "Introduce el número que usarás para el bot."
+echo "Usa formato internacional sin símbolos (ej: 5212223334455)."
+echo "------------------------------------------"
+echo ""
+echo -n "📞 NÚMERO DE TELÉFONO: "
+read WHATSAPP_NUMBER
 
-clear
-echo "===================================="
-echo "✅ INSTALACIÓN COMPLETA"
-echo "===================================="
-echo "URL: $USER_URL"
+# Guardar el número en el archivo de configuración .env
+echo "PAIRING_NUMBER=$WHATSAPP_NUMBER" >> .env
+echo "USE_PAIRING_CODE=true" >> .env
+
+header
+echo "=========================================="
+echo "✅ INSTALACIÓN FINALIZADA"
+echo "=========================================="
+echo "Número vinculado: $WHATSAPP_NUMBER"
+echo "URL Sheets: $USER_URL"
+echo "------------------------------------------"
+echo "Para iniciar el bot manualmente más tarde:"
+echo "cd ~/whatsapp-bot-ventas && npm start"
+echo "------------------------------------------"
 echo ""
-echo "cd whatsapp-bot-ventas/bot && node bot.js"
-echo ""
-read -p "¿Iniciar ahora? (1=SI): " OPCION
-[ "$OPCION" == "1" ] && cd bot && node bot.js
+read -p "¿Deseas iniciar el bot ahora mismo? (s/n): " START_NOW
+
+if [[ "$START_NOW" =~ ^[Ss]$ ]]; then
+    npm start
+fi
