@@ -17,7 +17,7 @@ git clone https://github.com/antoniochp-mitiendawa/whatsapp-bot-ventas.git
 cd whatsapp-bot-ventas
 
 # ============================================
-# PASO 3: PEDIR LA URL (FORZANDO LECTURA)
+# PASO 3: PEDIR LA URL - CON FORZADO DE TERMINAL
 # ============================================
 echo ""
 echo "===================================="
@@ -30,14 +30,16 @@ echo "4. Copia la URL que aparece"
 echo "===================================="
 echo ""
 
-# FORZAR lectura desde terminal
+# FORZAR lectura desde terminal (ESTO HACE QUE FUNCIONE)
 exec < /dev/tty
+
 echo -n "📝 PEGA LA URL AQUÍ y presiona Enter: "
 read USER_URL
 
 # Guardar la URL (en dos lugares para seguridad)
 echo "$USER_URL" > url_sheets.txt
-echo "$USER_URL" > /data/data/com.termux/files/home/whatsapp-bot-ventas/url_sheets.txt
+mkdir -p bot
+echo "$USER_URL" > bot/url_sheets.txt
 echo "✅ URL guardada correctamente"
 echo ""
 
@@ -48,20 +50,15 @@ pkg install nodejs -y
 pkg install yarn -y
 pkg install wget -y
 
-# PASO 5: Crear carpeta del bot
-echo "📦 PASO 5: Creando estructura..."
-mkdir -p bot
-cp url_sheets.txt bot/
-
-# PASO 6: Crear carpetas multimedia
-echo "📦 PASO 6: Creando carpetas multimedia..."
+# PASO 5: Crear carpetas multimedia
+echo "📦 PASO 5: Creando carpetas multimedia..."
 mkdir -p /storage/emulated/0/WhatsAppBot
 mkdir -p /storage/emulated/0/WhatsAppBot/imagenes
 mkdir -p /storage/emulated/0/WhatsAppBot/videos
 mkdir -p /storage/emulated/0/WhatsAppBot/audios
 
-# PASO 7: Instalar dependencias Node.js
-echo "📦 PASO 7: Instalando librerías (esto puede tomar varios minutos)..."
+# PASO 6: Instalar dependencias Node.js
+echo "📦 PASO 6: Instalando librerías (esto puede tomar varios minutos)..."
 cd bot
 npm init -y
 npm install @whiskeysockets/baileys
@@ -73,18 +70,18 @@ npm install pino
 npm install dotenv
 npm install fs-extra
 
-# PASO 8: Instalar Ollama
-echo "📦 PASO 8: Instalando Ollama (IA local)..."
+# PASO 7: Instalar Ollama
+echo "📦 PASO 7: Instalando Ollama (IA local)..."
 cd ..
 curl -fsSL https://ollama.com/install.sh | sh
 ollama pull llama3.2:1b &
 
-# PASO 9: Crear carpetas de sesión y logs
+# PASO 8: Crear carpetas de sesión y logs
 mkdir -p bot/sesion_whatsapp
 mkdir -p bot/logs
 
 # ============================================
-# MENSAJE FINAL (AHORA CON LA URL CORRECTA)
+# MENSAJE FINAL
 # ============================================
 clear
 echo "===================================="
@@ -102,7 +99,7 @@ echo "   y mostrará el código de vinculación"
 echo "===================================="
 echo ""
 
-# PASO 10: Preguntar si quiere iniciar ahora
+# PASO 9: Preguntar si quiere iniciar ahora
 echo ""
 echo "¿Quieres iniciar el bot AHORA?"
 echo "Escribe 1 y Enter para INICIAR"
