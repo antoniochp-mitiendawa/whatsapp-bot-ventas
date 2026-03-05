@@ -1,71 +1,64 @@
 require('dotenv').config();
-const { 
-    default: makeWASocket, 
-    useMultiFileAuthState, 
-    DisconnectReason, 
-    fetchLatestBaileysVersion, 
-    makeCacheableSignalKeyStore 
-} = require('@whiskeysockets/baileys');
-const pino = require('pino');
 const fs = require('fs');
 const axios = require('axios');
-const { Boom } = require('@hapi/boom');
+const path = require('path');
 
+// ============================================
+// CONFIGURACIÓN
+// ============================================
 const CONFIG = {
     url_sheets: process.env.URL_SHEETS,
-    numero_telefono: process.env.PAIRING_NUMBER,
     archivo_memoria: 'datos_tienda.json',
-    carpeta_sesion: 'sesion_whatsapp',
-    ollama_url: 'http://localhost:11434/api/generate',
-    modelo: 'llama3.2:1b',
-    delay_min: 2,
-    delay_max: 5
+    carpeta_logs: './logs'
 };
 
-// ============================================
-// FUNCIÓN PARA DELAY ALEATORIO
-// ============================================
-function delayAleatorio() {
-    const min = CONFIG.delay_min;
-    const max = CONFIG.delay_max;
-    const tiempo = Math.floor(Math.random() * (max - min + 1) + min) * 1000;
-    console.log(`⏱️  Esperando ${tiempo/1000} segundos antes de responder...`);
-    return new Promise(resolve => setTimeout(resolve, tiempo));
+// Crear carpeta de logs si no existe
+if (!fs.existsSync(CONFIG.carpeta_logs)) {
+    fs.mkdirSync(CONFIG.carpeta_logs, { recursive: true });
 }
 
 // ============================================
-// FUNCIÓN PARA SINCRONIZAR DATOS (CON DELAY)
+// FUNCIÓN PARA GUARDAR LOG
+// ============================================
+function guardarLog(texto) {
+    const fecha = new Date().toISOString().split('T')[0];
+    const logFile = path.join(CONFIG.carpeta_logs, `${fecha}.log`);
+    const hora = new Date().toLocaleTimeString();
+    const linea = `[${hora}] ${texto}`;
+    
+    fs.appendFileSync(logFile, linea + '\n');
+    console.log(`📝 ${texto}`);
+}
+
+// ============================================
+// FUNCIÓN PARA SINCRONIZAR DATOS CON GOOGLE SHEETS
 // ============================================
 async function sincronizarDatos() {
     try {
         console.log("📥 Sincronizando con Google Sheets...");
+        
+        // Usar la acción obtener_todo de la Web App
         const response = await axios.get(`${CONFIG.url_sheets}?accion=obtener_todo`);
         
         if (response.data && response.data.status === 'success') {
             const data = response.data.data;
             
-            // Leer delay de la configuración
-            if (data.configuracion && data.configuracion.delay_respuesta) {
-                const delayStr = data.configuracion.delay_respuesta;
-                if (delayStr.includes('-')) {
-                    const partes = delayStr.split('-').map(p => parseInt(p.trim()));
-                    if (partes.length === 2 && !isNaN(partes[0]) && !isNaN(partes[1])) {
-                        CONFIG.delay_min = partes[0];
-                        CONFIG.delay_max = partes[1];
-                        console.log(`⏱️  Delay configurado: ${CONFIG.delay_min}-${CONFIG.delay_max} segundos`);
-                    }
-                }
-            }
-            
+            // Guardar en archivo local
             fs.writeFileSync(CONFIG.archivo_memoria, JSON.stringify(data, null, 2));
+            
             console.log("✅ Datos sincronizados correctamente");
             console.log(`   • Empresa: ${data.empresa?.nombre || 'No configurada'}`);
             console.log(`   • Productos: ${data.productos?.length || 0}`);
             console.log(`   • Asesores: ${data.asesores?.length || 0}`);
+            
             return data;
+        } else {
+            console.log("⚠️ Error en respuesta:", response.data?.mensaje || 'Respuesta vacía');
         }
     } catch (error) {
         console.log("⚠️ Error conectando con Sheets, usando caché local:", error.message);
+        
+        // Si falla, intentar cargar desde archivo local
         if (fs.existsSync(CONFIG.archivo_memoria)) {
             return JSON.parse(fs.readFileSync(CONFIG.archivo_memoria));
         }
@@ -74,182 +67,88 @@ async function sincronizarDatos() {
 }
 
 // ============================================
-// FUNCIÓN PARA PROCESAR CON IA (VERSIÓN OPTIMIZADA)
+// FUNCIÓN PARA OBTENER DATOS LOCALES (SIN CONSULTAR SHEETS)
 // ============================================
-async function procesarConIA(texto, datos) {
+function obtenerDatosLocales() {
     try {
-        // Construir prompt más eficiente
-        let prompt = "Eres un asistente de ventas. Responde breve.\n\n";
-        
-        // Información esencial de la empresa
-        if (datos.empresa) {
-            prompt += `Tienda: ${datos.empresa.nombre || 'Mi Tienda'}\n`;
-            prompt += `Horario: ${datos.empresa.horario || '9am-6pm'}\n`;
-            if (datos.empresa.prompt_sistema) {
-                prompt += `Instrucciones: ${datos.empresa.prompt_sistema}\n`;
-            }
+        if (fs.existsSync(CONFIG.archivo_memoria)) {
+            return JSON.parse(fs.readFileSync(CONFIG.archivo_memoria));
         }
-        
-        // Productos (solo nombres y precios para rapidez)
-        if (datos.productos && datos.productos.length > 0) {
-            prompt += "\nProductos:\n";
-            datos.productos.slice(0, 5).forEach(p => {
-                if (p.Activo === 'SI') {
-                    prompt += `- ${p.Nombre}: ${p.Precio}\n`;
-                }
-            });
-        }
-        
-        prompt += `\nCliente: ${texto}\n`;
-        prompt += `Asistente: `;
-
-        // Consultar Ollama con timeout reducido
-        const res = await axios.post(CONFIG.ollama_url, {
-            model: CONFIG.modelo,
-            prompt: prompt,
-            stream: false,
-            options: {
-                temperature: 0.7,
-                max_tokens: 100
-            }
-        }, {
-            timeout: 15000 // 15 segundos máximo
-        });
-        
-        return res.data.response;
-        
     } catch (error) {
-        if (error.code === 'ECONNABORTED') {
-            console.log("❌ Timeout: Ollama tardó demasiado");
-            return "Lo siento, estoy procesando tu solicitud. Un asesor humano te atenderá en breve si lo prefieres.";
-        }
-        console.log("❌ Error en IA:", error.message);
-        return "Un asesor humano te atenderá en breve.";
+        guardarLog(`Error leyendo caché local: ${error.message}`);
     }
+    return { empresa: {}, productos: [], asesores: [] };
 }
 
 // ============================================
-// FUNCIÓN PARA ASIGNAR ASESOR
+// FUNCIÓN PARA ASIGNAR ASESOR (rotación)
 // ============================================
-async function asignarAsesor(datos) {
-    if (!datos.asesores) return null;
+async function asignarAsesor() {
+    const datos = obtenerDatosLocales();
     
+    if (!datos.asesores || datos.asesores.length === 0) {
+        return null;
+    }
+    
+    // Filtrar asesores activos
     const activos = datos.asesores.filter(a => a.Activo === 'SI');
     if (activos.length === 0) return null;
     
+    // Ordenar por los que menos atendidos tienen hoy
     activos.sort((a, b) => (a['Atendidos Hoy'] || 0) - (b['Atendidos Hoy'] || 0));
     const asesor = activos[0];
     
+    // Actualizar conteo en Google Sheets (opcional)
     try {
         await axios.get(`${CONFIG.url_sheets}?accion=actualizar_asesor&id=${asesor.ID}&atendidos=${(asesor['Atendidos Hoy'] || 0) + 1}`);
     } catch (e) {
-        console.log("⚠️ No se pudo actualizar conteo de asesor");
+        guardarLog(`⚠️ No se pudo actualizar conteo de asesor: ${e.message}`);
     }
     
     return asesor;
 }
 
 // ============================================
-// FUNCIÓN PRINCIPAL
+// FUNCIÓN PRINCIPAL - SOLO SINCRONIZACIÓN
 // ============================================
-async function iniciarBot() {
+async function iniciar() {
     console.log("======================================");
-    console.log("🤖 BOT DE VENTAS CON IA");
+    console.log("🤖 BOT DE VENTAS - GESTOR DE DATOS");
     console.log("======================================");
     
-    // Sincronizar datos
+    // Sincronizar datos al iniciar
     const datos = await sincronizarDatos();
     
     if (!datos) {
         console.log("❌ No se pudieron cargar los datos. Verifica tu URL de Sheets.");
         process.exit(1);
     }
-
-    const { state, saveCreds } = await useMultiFileAuthState(CONFIG.carpeta_sesion);
-    const { version } = await fetchLatestBaileysVersion();
-
-    const sock = makeWASocket({
-        version,
-        printQRInTerminal: false,
-        auth: {
-            creds: state.creds,
-            keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })),
-        },
-        logger: pino({ level: 'silent' }),
-        browser: ["Ubuntu", "Chrome", "20.0.04"]
-    });
-
-    if (!sock.authState.creds.registered) {
-        setTimeout(async () => {
-            try {
-                const codigo = await sock.requestPairingCode(CONFIG.numero_telefono);
-                console.log('\n======================================');
-                console.log('🔐 CÓDIGO DE VINCULACIÓN');
-                console.log('======================================');
-                console.log(`   ${codigo}`);
-                console.log('======================================\n');
-            } catch (error) {
-                console.log('❌ Error generando código:', error.message);
-            }
-        }, 3000);
-    }
-
-    sock.ev.on('creds.update', saveCreds);
-
-    sock.ev.on('connection.update', (up) => {
-        if (up.connection === 'open') {
-            console.log('\n✅ BOT EN LÍNEA - LISTO PARA ATENDER');
-            console.log('======================================\n');
-        }
-        if (up.connection === 'close') {
-            const shouldReconnect = new Boom(up.lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
-            if (shouldReconnect) {
-                console.log('🔄 Reconectando...');
-                iniciarBot();
-            }
-        }
-    });
-
-    sock.ev.on('messages.upsert', async ({ messages, type }) => {
-        if (type !== 'notify' || !messages[0].message || messages[0].key.fromMe) return;
-        
-        const jid = messages[0].key.remoteJid;
-        if (jid.includes('@g.us')) return;
-        
-        const msgText = messages[0].message.conversation || 
-                       messages[0].message.extendedTextMessage?.text || 
-                       '';
-
-        if (msgText && datos) {
-            console.log(`\n📩 Mensaje de ${jid.split('@')[0]}: "${msgText}"`);
-            
-            // Detectar si pide asesor
-            const textoLower = msgText.toLowerCase();
-            if (textoLower.includes('asesor') || textoLower.includes('humano') || textoLower.includes('persona')) {
-                const asesor = await asignarAsesor(datos);
-                if (asesor) {
-                    const mensaje = datos.empresa?.mensaje_asignacion || 'Te contactaré con un asesor en breve.';
-                    const mensajeFinal = mensaje.replace('{nombre}', asesor.Nombre || '').replace('{telefono}', asesor.Teléfono || '');
-                    await sock.sendMessage(jid, { text: mensajeFinal });
-                    console.log(`✅ Asesor asignado: ${asesor.Nombre}`);
-                    return;
-                }
-            }
-            
-            // Procesar con IA
-            console.log("🤔 Procesando con IA...");
-            const respuesta = await procesarConIA(msgText, datos);
-            
-            // Aplicar delay configurable antes de responder
-            await delayAleatorio();
-            
-            await sock.sendMessage(jid, { text: respuesta });
-            console.log(`✅ Respuesta enviada: "${respuesta.substring(0, 50)}..."`);
-        }
-    });
+    
+    console.log("\n✅ Datos locales actualizados");
+    console.log("📁 Archivo: datos_tienda.json");
+    console.log("\n📝 El bot de WhatsApp (Baileys.cpp) usará estos datos localmente.");
+    console.log("📱 Para iniciar el bot con Baileys.cpp, ejecuta:");
+    console.log("   cd ~/whatsapp-bot-ventas/Baileys.cpp");
+    console.log("   yarn example");
+    console.log("\n🔄 Este script se actualizará automáticamente con Sheets");
+    console.log("   cada vez que lo ejecutes.");
+    console.log("======================================\n");
+    
+    // Programar actualización cada 12 horas (opcional)
+    // Esto requeriría node-cron, pero por ahora lo dejamos manual
 }
 
-// Iniciar el bot
-iniciarBot().catch(error => {
+// ============================================
+// MANEJO DE CIERRE
+// ============================================
+process.on('SIGINT', () => {
+    console.log('\n\n👋 Cerrando gestor de datos...');
+    process.exit(0);
+});
+
+// ============================================
+// INICIAR
+// ============================================
+iniciar().catch(error => {
     console.log('❌ Error fatal:', error);
 });
