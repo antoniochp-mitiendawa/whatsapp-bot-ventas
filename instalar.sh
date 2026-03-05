@@ -1,163 +1,261 @@
-#!/bin/bash
+require('dotenv').config();
+const { 
+    default: makeWASocket, 
+    useMultiFileAuthState, 
+    DisconnectReason, 
+    fetchLatestBaileysVersion, 
+    makeCacheableSignalKeyStore 
+} = require('@whiskeysockets/baileys');
+const pino = require('pino');
+const fs = require('fs');
+const axios = require('axios');
+const { Boom } = require('@hapi/boom');
 
-header() {
-    clear
-    echo "=========================================="
-    echo "🚀 INSTALADOR BOT VENTAS - TINYLLAMA"
-    echo "=========================================="
+const CONFIG = {
+    url_sheets: process.env.URL_SHEETS,
+    numero_telefono: process.env.PAIRING_NUMBER,
+    archivo_memoria: 'datos_tienda.json',
+    carpeta_sesion: 'sesion_whatsapp',
+    ollama_url: 'http://localhost:11434/api/generate',
+    modelo: process.env.OLLAMA_MODEL || 'tinyllama:1.1b-chat-q4_K_M'
+};
+
+// ============================================
+// FUNCIÓN PARA SINCRONIZAR DATOS
+// ============================================
+async function sincronizarDatos() {
+    try {
+        console.log("📥 Sincronizando con Google Sheets...");
+        const response = await axios.get(`${CONFIG.url_sheets}?accion=obtener_todo`);
+        
+        if (response.data && response.data.status === 'success') {
+            const data = response.data.data;
+            
+            // Leer delay de la configuración si existe
+            if (data.configuracion && data.configuracion.delay_respuesta) {
+                const delayStr = data.configuracion.delay_respuesta;
+                if (delayStr.includes('-')) {
+                    const partes = delayStr.split('-').map(p => parseInt(p.trim()));
+                    if (partes.length === 2 && !isNaN(partes[0]) && !isNaN(partes[1])) {
+                        CONFIG.delay_min = partes[0];
+                        CONFIG.delay_max = partes[1];
+                        console.log(`⏱️  Delay configurado: ${CONFIG.delay_min}-${CONFIG.delay_max} segundos`);
+                    }
+                }
+            }
+            
+            fs.writeFileSync(CONFIG.archivo_memoria, JSON.stringify(data, null, 2));
+            console.log("✅ Datos sincronizados correctamente");
+            console.log(`   • Empresa: ${data.empresa?.nombre || 'No configurada'}`);
+            console.log(`   • Productos: ${data.productos?.length || 0}`);
+            console.log(`   • Asesores: ${data.asesores?.length || 0}`);
+            return data;
+        }
+    } catch (error) {
+        console.log("⚠️ Error conectando con Sheets, usando caché local:", error.message);
+        if (fs.existsSync(CONFIG.archivo_memoria)) {
+            return JSON.parse(fs.readFileSync(CONFIG.archivo_memoria));
+        }
+    }
+    return null;
 }
 
-header
-echo "📦 PASO 1: Preparando entorno de Termux..."
-pkg update -y && pkg upgrade -y
-pkg install -y git nodejs-lts wget cronie termux-services cmake make
+// ============================================
+// FUNCIÓN PARA DELAY ALEATORIO
+// ============================================
+function delayAleatorio() {
+    const min = CONFIG.delay_min || 2;
+    const max = CONFIG.delay_max || 5;
+    const tiempo = Math.floor(Math.random() * (max - min + 1) + min) * 1000;
+    console.log(`⏱️  Esperando ${tiempo/1000} segundos antes de responder...`);
+    return new Promise(resolve => setTimeout(resolve, tiempo));
+}
 
-header
-echo "📦 PASO 2: Clonando repositorio..."
-cd $HOME
-rm -rf whatsapp-bot-ventas
-git clone https://github.com/antoniochp-mitiendawa/whatsapp-bot-ventas.git
-cd whatsapp-bot-ventas
+// ============================================
+// FUNCIÓN PARA PROCESAR CON IA
+// ============================================
+async function procesarConIA(texto, datos) {
+    try {
+        // Construir prompt con información de la tienda
+        let prompt = "Eres un asistente de ventas amable y servicial.\n\n";
+        
+        if (datos.empresa) {
+            prompt += "INFORMACIÓN DE LA EMPRESA:\n";
+            for (let [key, value] of Object.entries(datos.empresa)) {
+                if (value && key !== 'prompt_sistema') {
+                    prompt += `${key}: ${value}\n`;
+                }
+            }
+            prompt += "\n";
+        }
+        
+        if (datos.empresa?.prompt_sistema) {
+            prompt += `INSTRUCCIONES: ${datos.empresa.prompt_sistema}\n\n`;
+        }
+        
+        if (datos.productos && datos.productos.length > 0) {
+            prompt += "PRODUCTOS DISPONIBLES:\n";
+            datos.productos.forEach(p => {
+                if (p.Activo === 'SI') {
+                    prompt += `- ${p.Nombre}: ${p.Precio} (Stock: ${p.Stock})\n`;
+                }
+            });
+            prompt += "\n";
+        }
+        
+        prompt += `Cliente: ${texto}\n`;
+        prompt += `Asistente: `;
 
-# ============================================
-# CONFIGURACIÓN INICIAL
-# ============================================
-header
-echo "🔗 CONFIGURACIÓN DE DATOS"
-echo "=========================================="
-read -p "📝 PEGA TU URL DE GOOGLE SHEETS: " USER_URL
-read -p "📞 NÚMERO (Ej: 5212223334455): " WHATSAPP_NUMBER
+        const res = await axios.post(CONFIG.ollama_url, {
+            model: CONFIG.modelo,
+            prompt: prompt,
+            stream: false,
+            options: {
+                temperature: 0.7,
+                max_tokens: 150
+            }
+        }, {
+            timeout: 30000
+        });
+        
+        return res.data.response;
+        
+    } catch (error) {
+        if (error.code === 'ECONNABORTED') {
+            console.log("❌ Timeout: IA tardó demasiado");
+            return "Lo siento, estoy procesando tu solicitud. Un asesor humano te atenderá en breve si lo prefieres.";
+        }
+        console.log("❌ Error en IA:", error.message);
+        return "Un asesor humano te atenderá en breve.";
+    }
+}
 
-# Crear estructura y archivos de configuración
-mkdir -p bot
-cd bot
+// ============================================
+// FUNCIÓN PARA ASIGNAR ASESOR
+// ============================================
+async function asignarAsesor(datos) {
+    if (!datos.asesores) return null;
+    
+    const activos = datos.asesores.filter(a => a.Activo === 'SI');
+    if (activos.length === 0) return null;
+    
+    activos.sort((a, b) => (a['Atendidos Hoy'] || 0) - (b['Atendidos Hoy'] || 0));
+    const asesor = activos[0];
+    
+    try {
+        await axios.get(`${CONFIG.url_sheets}?accion=actualizar_asesor&id=${asesor.ID}&atendidos=${(asesor['Atendidos Hoy'] || 0) + 1}`);
+    } catch (e) {
+        console.log("⚠️ No se pudo actualizar conteo de asesor");
+    }
+    
+    return asesor;
+}
 
-# Crear .env
-echo "URL_SHEETS=$USER_URL" > .env
-echo "PAIRING_NUMBER=$WHATSAPP_NUMBER" >> .env
+// ============================================
+// FUNCIÓN PRINCIPAL
+// ============================================
+async function iniciarBot() {
+    console.log("======================================");
+    console.log("🤖 BOT DE VENTAS CON IA");
+    console.log("======================================");
+    
+    // Sincronizar datos
+    const datos = await sincronizarDatos();
+    
+    if (!datos) {
+        console.log("❌ No se pudieron cargar los datos. Verifica tu URL de Sheets.");
+        process.exit(1);
+    }
 
-# ============================================
-# INSTALACIÓN DE DEPENDENCIAS NODE
-# ============================================
-header
-echo "📦 PASO 3: Instalando librerías Node.js..."
-npm init -y
-npm install @whiskeysockets/baileys @hapi/boom axios pino dotenv fs-extra qrcode-terminal node-cron
+    const { state, saveCreds } = await useMultiFileAuthState(CONFIG.carpeta_sesion);
+    const { version } = await fetchLatestBaileysVersion();
 
-# ============================================
-# INSTALACIÓN DE LLAMA.CPP Y TINYLLAMA
-# ============================================
-header
-echo "🧠 PASO 4: Instalando llama.cpp y modelo TinyLlama..."
+    const sock = makeWASocket({
+        version,
+        printQRInTerminal: false,
+        auth: {
+            creds: state.creds,
+            keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })),
+        },
+        logger: pino({ level: 'silent' }),
+        browser: ["Ubuntu", "Chrome", "20.0.04"]
+    });
 
-cd $HOME/whatsapp-bot-ventas
-git clone https://github.com/ggerganov/llama.cpp.git
-cd llama.cpp
+    if (!sock.authState.creds.registered) {
+        setTimeout(async () => {
+            try {
+                const codigo = await sock.requestPairingCode(CONFIG.numero_telefono);
+                console.log('\n======================================');
+                console.log('🔐 CÓDIGO DE VINCULACIÓN');
+                console.log('======================================');
+                console.log(`   ${codigo}`);
+                console.log('======================================\n');
+                console.log('1. Abre WhatsApp en tu teléfono');
+                console.log('2. Ve a 3 puntos → Dispositivos vinculados');
+                console.log('3. Toca "Vincular con número de teléfono"');
+                console.log('4. Ingresa el código de arriba\n');
+            } catch (error) {
+                console.log('❌ Error generando código:', error.message);
+            }
+        }, 3000);
+    }
 
-echo "🔧 Compilando llama.cpp..."
-make -j4
+    sock.ev.on('creds.update', saveCreds);
 
-# Descargar modelo TinyLlama (780MB)
-cd models
-echo "📥 Descargando modelo TinyLlama (780MB) - esto puede tomar varios minutos..."
-wget -O tinyllama-1.1b-chat.Q4_K_M.gguf https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf
+    sock.ev.on('connection.update', (up) => {
+        if (up.connection === 'open') {
+            console.log('\n✅ BOT EN LÍNEA - LISTO PARA ATENDER');
+            console.log('======================================\n');
+        }
+        if (up.connection === 'close') {
+            const shouldReconnect = new Boom(up.lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
+            if (shouldReconnect) {
+                console.log('🔄 Reconectando...');
+                iniciarBot();
+            }
+        }
+    });
 
-if [ ! -f tinyllama-1.1b-chat.Q4_K_M.gguf ]; then
-    echo "⚠️ Error con wget, intentando con curl..."
-    curl -L -o tinyllama-1.1b-chat.Q4_K_M.gguf https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf
-fi
+    sock.ev.on('messages.upsert', async ({ messages, type }) => {
+        if (type !== 'notify' || !messages[0].message || messages[0].key.fromMe) return;
+        
+        const jid = messages[0].key.remoteJid;
+        if (jid.includes('@g.us')) return;
+        
+        const msgText = messages[0].message.conversation || 
+                       messages[0].message.extendedTextMessage?.text || 
+                       '';
 
-cd $HOME/whatsapp-bot-ventas
+        if (msgText && datos) {
+            console.log(`\n📩 Mensaje de ${jid.split('@')[0]}: "${msgText}"`);
+            
+            // Detectar si pide asesor
+            const textoLower = msgText.toLowerCase();
+            if (textoLower.includes('asesor') || textoLower.includes('humano') || textoLower.includes('persona')) {
+                const asesor = await asignarAsesor(datos);
+                if (asesor) {
+                    const mensaje = datos.empresa?.mensaje_asignacion || 'Te contactaré con un asesor en breve.';
+                    const mensajeFinal = mensaje.replace('{nombre}', asesor.Nombre || '').replace('{telefono}', asesor.Teléfono || '');
+                    await sock.sendMessage(jid, { text: mensajeFinal });
+                    console.log(`✅ Asesor asignado: ${asesor.Nombre}`);
+                    return;
+                }
+            }
+            
+            // Procesar con IA
+            console.log("🤔 Procesando con IA...");
+            const respuesta = await procesarConIA(msgText, datos);
+            
+            // Aplicar delay configurable antes de responder
+            await delayAleatorio();
+            
+            await sock.sendMessage(jid, { text: respuesta });
+            console.log(`✅ Respuesta enviada: "${respuesta.substring(0, 50)}..."`);
+        }
+    });
+}
 
-# ============================================
-# CREAR SCRIPT DE INICIO RÁPIDO
-# ============================================
-cat > bot/iniciar.sh << 'EOF'
-#!/bin/bash
-cd /data/data/com.termux/files/home/whatsapp-bot-ventas/bot
-node bot.js
-EOF
-chmod +x bot/iniciar.sh
-
-# ============================================
-# CONFIGURACIÓN DE ACTUALIZACIONES AUTOMÁTICAS
-# ============================================
-header
-echo "🔄 PASO 5: Configurando actualizaciones automáticas..."
-
-mkdir -p /storage/emulated/0/WhatsAppBot/logs
-
-cat > $HOME/whatsapp-bot-ventas/actualizar.sh << 'EOF'
-#!/bin/bash
-FECHA=$(date '+%Y-%m-%d %H:%M:%S')
-LOG_FILE="/storage/emulated/0/WhatsAppBot/logs/actualizaciones.log"
-
-echo "[$FECHA] Iniciando actualización..." >> $LOG_FILE
-
-# Detener bot
-pkill -f "node bot.js" 2>/dev/null
-sleep 2
-
-# Actualizar dependencias
-cd /data/data/com.termux/files/home/whatsapp-bot-ventas/bot
-npm update >> $LOG_FILE 2>&1
-
-# Recompilar llama.cpp (opcional)
-cd /data/data/com.termux/files/home/whatsapp-bot-ventas/llama.cpp
-git pull >> $LOG_FILE 2>&1
-make -j4 >> $LOG_FILE 2>&1
-
-echo "[$FECHA] Actualización completada" >> $LOG_FILE
-EOF
-
-chmod +x $HOME/whatsapp-bot-ventas/actualizar.sh
-
-# Configurar cron
-(crontab -l 2>/dev/null; echo "0 3 * * * /data/data/com.termux/files/home/whatsapp-bot-ventas/actualizar.sh") | crontab -
-sv up cron
-
-# ============================================
-# VERIFICACIÓN FINAL
-# ============================================
-header
-echo "🔍 VERIFICANDO INSTALACIÓN..."
-
-if [ -f "$HOME/whatsapp-bot-ventas/llama.cpp/models/tinyllama-1.1b-chat.Q4_K_M.gguf" ]; then
-    TAMANO=$(ls -lh "$HOME/whatsapp-bot-ventas/llama.cpp/models/tinyllama-1.1b-chat.Q4_K_M.gguf" | awk '{print $5}')
-    echo "✅ Modelo TinyLlama instalado: $TAMANO"
-else
-    echo "❌ Error: Modelo no encontrado"
-fi
-
-# ============================================
-# MENSAJE FINAL
-# ============================================
-header
-echo "=========================================="
-echo "✅ INSTALACIÓN COMPLETA"
-echo "=========================================="
-echo ""
-echo "📌 URL: $USER_URL"
-echo "📞 Número: $WHATSAPP_NUMBER"
-echo "🧠 Modelo: TinyLlama (780MB)"
-echo "🔄 Actualización: Diaria (3:00 AM)"
-echo ""
-echo "🚀 PARA INICIAR EL BOT:"
-echo "   cd ~/whatsapp-bot-ventas/bot"
-echo "   node bot.js"
-echo ""
-echo "📱 IMPORTANTE:"
-echo "   • El bot usará PAIRING (código), NO QR"
-echo "   • Se generará un código de 8 dígitos"
-echo "   • Ingresa el código en WhatsApp → Vincular dispositivo"
-echo ""
-echo "=========================================="
-
-read -p "¿Deseas iniciar el bot ahora? (s/n): " START
-if [ "$START" == "s" ] || [ "$START" == "S" ]; then
-    echo ""
-    echo "🚀 INICIANDO BOT..."
-    echo "======================"
-    cd $HOME/whatsapp-bot-ventas/bot
-    node bot.js
-fi
+// Iniciar el bot
+iniciarBot().catch(error => {
+    console.log('❌ Error fatal:', error);
+});
