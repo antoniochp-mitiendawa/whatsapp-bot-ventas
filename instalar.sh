@@ -1,4 +1,4 @@
-#!/bin/bash
+}#!/bin/bash
 
 echo "===================================="
 echo "🚀 INSTALADOR BOT VENTAS v1.0"
