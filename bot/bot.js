@@ -1,108 +1,76 @@
 require('dotenv').config();
-const { 
-    default: makeWASocket, 
-    useMultiFileAuthState, 
-    DisconnectReason, 
-    fetchLatestBaileysVersion, 
-    makeCacheableSignalKeyStore 
-} = require('@whiskeysockets/baileys');
-const { Boom } = require('@hapi/boom');
+const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const fs = require('fs');
-const path = require('path');
-const axios = require('axios');
+const axios = require('axios'); // Librería para hablar con Google
 
-// Configuración cargada desde el .env que creó el instalador
 const CONFIG = {
     url_sheets: process.env.URL_SHEETS,
     numero_telefono: process.env.PAIRING_NUMBER,
-    carpeta_sesion: 'sesion_whatsapp'
+    archivo_datos: 'datos_tienda.json' // AQUÍ SE GUARDARÁ TODO
 };
 
-// Asegurar que exista la carpeta de sesión
-if (!fs.existsSync(CONFIG.carpeta_sesion)) {
-    fs.mkdirSync(CONFIG.carpeta_sesion);
+// --- FUNCIÓN PARA DESCARGAR Y GUARDAR LOCALMENTE ---
+async function actualizarDatosLocales() {
+    try {
+        console.log("📥 Consultando Google Sheets por primera vez...");
+        // Pedimos a la URL de Google que nos de todos los datos
+        const respuesta = await axios.get(CONFIG.url_sheets + "?accion=leerTodo");
+        
+        if (respuesta.data) {
+            // Guardamos la información en el archivo local datos_tienda.json
+            fs.writeFileSync(CONFIG.archivo_datos, JSON.stringify(respuesta.data, null, 2));
+            console.log("✅ Memoria local actualizada. Datos guardados en:", CONFIG.archivo_datos);
+            return respuesta.data;
+        }
+    } catch (error) {
+        console.error("❌ Error al consultar Google Sheets:", error.message);
+        // Si falla, intentamos leer lo que ya teníamos guardado antes
+        if (fs.existsSync(CONFIG.archivo_datos)) {
+            console.log("⚠️ Usando copia local antigua para continuar.");
+            return JSON.parse(fs.readFileSync(CONFIG.archivo_datos));
+        }
+    }
+    return null;
 }
 
+// --- FUNCIÓN PRINCIPAL DEL BOT ---
 async function iniciarWhatsApp() {
-    const { state, saveCreds } = await useMultiFileAuthState(CONFIG.carpeta_sesion);
+    // 1. Antes de conectar a WhatsApp, llenamos la memoria local
+    const datosTienda = await actualizarDatosLocales();
+    
+    if (!datosTienda) {
+        console.log("❌ No se pudieron obtener datos. Revisa tu URL de Google Sheets.");
+        // No detenemos el bot, pero avisamos.
+    }
+
+    const { state, saveCreds } = await useMultiFileAuthState('sesion_whatsapp');
     const { version } = await fetchLatestBaileysVersion();
 
     const sock = makeWASocket({
         version,
-        printQRInTerminal: false, // Usaremos Pairing Code
-        auth: {
-            creds: state.creds,
-            keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })),
-        },
+        printQRInTerminal: false,
+        auth: state,
         logger: pino({ level: 'silent' }),
         browser: ["Ubuntu", "Chrome", "20.0.04"]
     });
 
-    // LÓGICA DE EMPAREJAMIENTO AUTOMÁTICO
+    // Lógica de Pairing Code
     if (!sock.authState.creds.registered) {
         const numero = CONFIG.numero_telefono;
-        
-        if (!numero) {
-            console.log('❌ Error: No hay número de teléfono en el archivo .env');
-            process.exit(1);
-        }
-
-        console.log(`\n🔄 Solicitando código de vinculación para: ${numero}...`);
-        
         setTimeout(async () => {
             try {
                 const codigo = await sock.requestPairingCode(numero);
-                console.log('\n====================================');
-                console.log('🔐 TU CÓDIGO DE VINCULACIÓN ES:');
-                console.log(`      >  ${codigo}  <`);
-                console.log('====================================');
-                console.log('1. Abre WhatsApp en tu celular.');
-                console.log('2. Ve a Dispositivos vinculados > Vincular con número.');
-                console.log('3. Escribe el código de arriba.\n');
-            } catch (error) {
-                console.error('❌ Error al generar el código:', error.message);
-            }
+                console.log("\n🔐 TU CÓDIGO DE VINCULACIÓN: " + codigo + "\n");
+            } catch (e) { console.error("Error al pedir código", e); }
         }, 3000);
     }
 
-    // Guardar credenciales cuando se actualicen
     sock.ev.on('creds.update', saveCreds);
-
-    // Manejo de conexión
-    sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect } = update;
-        if (connection === 'close') {
-            const debeReconectar = (lastDisconnect.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
-            if (debeReconectar) {
-                console.log('🔄 Reconectando...');
-                iniciarWhatsApp();
-            }
-        } else if (connection === 'open') {
-            console.log('\n✅ ¡BOT CONECTADO Y LISTO!');
-            console.log('🔗 Sincronizado con Sheets:', CONFIG.url_sheets);
-        }
-    });
-
-    // Escuchar mensajes entrantes
-    sock.ev.on('messages.upsert', async ({ messages, type }) => {
-        if (type !== 'notify') return;
-        const msg = messages[0];
-        if (!msg.message || msg.key.fromMe) return;
-
-        const jid = msg.key.remoteJid;
-        const textoEscrito = msg.message.conversation || msg.message.extendedTextMessage?.text;
-
-        if (textoEscrito) {
-            console.log(`📩 Mensaje de [${jid}]: ${textoEscrito}`);
-            
-            // Ejemplo de respuesta automática para probar conexión
-            if (textoEscrito.toLowerCase() === 'hola') {
-                await sock.sendMessage(jid, { text: '¡Hola! Estoy procesando tu solicitud con mi sistema de ventas.' });
-            }
-        }
+    sock.ev.on('connection.update', (up) => {
+        if (up.connection === 'open') console.log('\n✅ BOT CONECTADO Y CON DATOS LOCALES');
+        if (up.connection === 'close') iniciarWhatsApp();
     });
 }
 
-// Arrancar el proceso
-iniciarWhatsApp().catch(err => console.error("Error crítico:", err));
+iniciarWhatsApp();
