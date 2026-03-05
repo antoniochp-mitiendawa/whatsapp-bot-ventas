@@ -10,27 +10,40 @@ const pino = require('pino');
 const fs = require('fs');
 const axios = require('axios');
 const { Boom } = require('@hapi/boom');
+const { exec } = require('child_process');
 
 const CONFIG = {
     url_sheets: process.env.URL_SHEETS,
     numero_telefono: process.env.PAIRING_NUMBER,
     archivo_memoria: 'datos_tienda.json',
     carpeta_sesion: 'sesion_whatsapp',
-    llama_url: process.env.LLAMA_API || 'http://localhost:8080/v1/chat/completions'
+    llama_url: 'http://localhost:8080/v1/chat/completions',
+    path_llama: '../../../../llama.cpp/build/bin/llama-server',
+    path_model: '../../../../llama.cpp/models/model.gguf'
 };
+
+// --- VERIFICADOR AUTOMÁTICO DE IA ---
+async function asegurarIA() {
+    try {
+        await axios.get('http://localhost:8080/health');
+        console.log("🧠 Servidor de IA detectado y activo.");
+    } catch (e) {
+        console.log("⚠️ Servidor de IA no responde. Intentando reiniciar...");
+        exec(`nohup ${CONFIG.path_llama} -m ${CONFIG.path_model} --port 8080 --threads 4 > llama_auto.log 2>&1 &`);
+    }
+}
 
 async function sincronizarDatos() {
     try {
-        console.log("📥 Sincronizando memoria local con Sheets...");
+        console.log("📥 Consultando Google Sheets...");
         const response = await axios.get(`${CONFIG.url_sheets}?accion=leerTodo`);
         if (response.data) {
             fs.writeFileSync(CONFIG.archivo_memoria, JSON.stringify(response.data, null, 2));
-            console.log("✅ Memoria local actualizada.");
+            console.log("✅ Datos locales actualizados.");
             return response.data;
         }
     } catch (error) {
         if (fs.existsSync(CONFIG.archivo_memoria)) {
-            console.log("📂 Cargando memoria local (Offline).");
             return JSON.parse(fs.readFileSync(CONFIG.archivo_memoria));
         }
     }
@@ -45,7 +58,7 @@ async function procesarConIA(texto, datos) {
 
         const res = await axios.post(CONFIG.llama_url, {
             messages: [
-                { role: "system", content: "Eres un asistente de ventas amable." },
+                { role: "system", content: "Eres un asistente de ventas amable y conciso." },
                 { role: "user", content: promptSystem }
             ],
             temperature: 0.7
@@ -53,13 +66,15 @@ async function procesarConIA(texto, datos) {
 
         return res.data.choices[0].message.content;
     } catch (e) {
-        console.error("❌ Error Llama.cpp:", e.message);
         return "Gracias por escribir. En un momento un asesor te atenderá.";
     }
 }
 
 async function iniciarBot() {
+    // Verificamos la IA y cargamos datos antes de conectar
+    await asegurarIA();
     const memoriaLocal = await sincronizarDatos();
+
     const { state, saveCreds } = await useMultiFileAuthState(CONFIG.carpeta_sesion);
     const { version } = await fetchLatestBaileysVersion();
 
@@ -86,7 +101,7 @@ async function iniciarBot() {
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('connection.update', (up) => {
-        if (up.connection === 'open') console.log('✅ BOT EN LÍNEA (Llama.cpp)');
+        if (up.connection === 'open') console.log('✅ BOT EN LÍNEA');
         if (up.connection === 'close') {
             if (new Boom(up.lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut) iniciarBot();
         }
@@ -98,10 +113,9 @@ async function iniciarBot() {
         const msgText = messages[0].message.conversation || messages[0].message.extendedTextMessage?.text;
 
         if (msgText && memoriaLocal) {
-            console.log(`📩 De ${jid}: ${msgText}`);
+            console.log(`📩 Mensaje de ${jid}: ${msgText}`);
             const respuesta = await procesarConIA(msgText, memoriaLocal);
             await sock.sendMessage(jid, { text: respuesta });
-            console.log(`📤 Respuesta enviada.`);
         }
     });
 }
