@@ -19,7 +19,7 @@ rm -rf whatsapp-bot-ventas 2>/dev/null
 git clone https://github.com/antoniochp-mitiendawa/whatsapp-bot-ventas.git
 cd whatsapp-bot-ventas
 
-# PASO 3: Pedir URL de Google Sheets
+# PASO 3: Pedir URL de Google Sheets (CORREGIDO)
 echo ""
 echo "===================================="
 echo "🔗 URL DE GOOGLE SHEETS"
@@ -30,9 +30,26 @@ echo "3. Ve a '📋 Ver instrucciones'"
 echo "4. Copia la URL que aparece al implementar"
 echo "===================================="
 echo ""
-echo "📝 Escribe la URL y presiona Enter:"
-read USER_URL
-echo $USER_URL > url_sheets.txt
+
+# Pausa para que el usuario lea las instrucciones
+sleep 2
+
+# Leer la URL con validación
+while true; do
+    echo -n "📝 Escribe la URL y presiona Enter: "
+    read USER_URL
+    
+    if [ -n "$USER_URL" ]; then
+        break
+    else
+        echo "❌ La URL no puede estar vacía. Intenta de nuevo."
+    fi
+done
+
+# Guardar URL
+echo "$USER_URL" > url_sheets.txt
+echo "✅ URL guardada correctamente"
+sleep 1
 
 # PASO 4: Crear carpeta del bot
 mkdir -p bot
@@ -42,7 +59,7 @@ cp url_sheets.txt bot/
 
 # PASO 6: Instalar dependencias
 echo ""
-echo "📦 PASO 3: Instalando librerías..."
+echo "📦 PASO 6: Instalando librerías..."
 cd bot
 npm init -y
 npm install @whiskeysockets/baileys
