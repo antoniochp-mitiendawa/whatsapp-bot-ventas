@@ -16,7 +16,7 @@ pkg install yarn -y
 echo "📦 PASO 2: Descargando el bot..."
 cd /data/data/com.termux/files/home
 rm -rf whatsapp-bot-ventas 2>/dev/null
-git clone https://github.com/TU_USUARIO/whatsapp-bot-ventas.git
+git clone https://github.com/antoniochp-mitiendawa/whatsapp-bot-ventas.git
 cd whatsapp-bot-ventas
 
 # PASO 3: Pedir URL de Google Sheets
